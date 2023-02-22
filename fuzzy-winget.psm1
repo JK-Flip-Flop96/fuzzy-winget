@@ -38,9 +38,11 @@ TODO: Add support for using multiple package managers at once, using the package
 TODO: Add support for other operating systems (e.g. Linux, macOS)
 -   TODO: Add support for other package managers (e.g. apt, pacman, etc.)
 
+-- POSSIBLE -- (Just ideas, not sure if they are necessary/possible/feasible)
+TODO: Convert the preview command to native cmd syntax so that it can be run in a cmd shell, stops the need for creating tonnes of powershell instances
+
 -- CHORES -- (Anytime, preferably before major/minor release)
 - Powershell stuff -
-TODO: Create a module manifest
 TODO: Write documentation for the functions, examples, etc.
 TODO: Release to the PowerShell Gallery? - only once the module is in a known working state
 
@@ -64,26 +66,6 @@ function Invoke-FuzzyWinget {
         [Parameter(Mandatory=$true, ValueFromPipeline=$true)] # Confirms that there is at least one package to act on
         [string[]]$Packages
     )
-
-    # Return if the function was invoked by the user and not by another function
-    if($PSCmdlet.MyInvocation.CommandOrigin -ne "Internal"){
-        Write-Host "This function is not intended to be called directly. Call the other functions in this module instead." -ForegroundColor Red
-        return
-    }
-
-    # FIXME: Remove this when the cmdlet is supported in WindowsPowerShell (See issue #1)
-    # Exit if this cmdlet was run from WindowsPowerShell
-    if($PSVersionTable.PSEdition -eq "Desktop"){
-        Write-Host "This cmdlet is only supported in PowerShell Core currently." -ForegroundColor Red
-        return
-    }
-
-    # FIXME: Remove this when the cmdlet is supported in PowerShell Core < 7.2 (See issue #1)
-    # Exit if the powershell version is less than 7.2 (See issue #1)
-    if($PSVersionTable.PSVersion.Major -lt 7 -or ($PSVersionTable.PSVersion.Major -eq 7 -and $PSVersionTable.PSVersion.Minor -lt 2)){
-        Write-Host "This cmdlet is only supported in PowerShell Core 7.2 or higher currently." -ForegroundColor Red
-        return
-    }
 
     # TODO: Can I differentiate between pwsh and pwsh-preview?
     # Define the ps executable to use for the preview command, pwsh for core and powershell for desktop
@@ -122,8 +104,9 @@ function Invoke-FuzzyWinget {
 
     # TODO: Allow the user to select multiple packages
 
-    # Get the ID from the selected line
+    # Get the ID and package name from the selected line
     $id = $package | Select-String -Pattern "\((.*?)\)" | ForEach-Object { $_.Matches.Groups[1].Value }
+    $name = $package | Select-String -Pattern "(.*) \(" | ForEach-Object { $_.Matches.Groups[1].Value }
 
     # If the ID is empty return
     if(-not $id){
@@ -133,18 +116,25 @@ function Invoke-FuzzyWinget {
     # Capture the result of the action
     $result = $null
 
+    # Define the package title for use in when reporting the action to the user  
+    if ($PSVersionTable.PSVersion.Major -ge 7 -and $PSVersionTable.PSVersion.Minor -ge 2) {
+        $packageTitle = "$name ($($PSStyle.Foreground.Yellow)$id$($PSStyle.Foreground.BrightWhite))" # Use PSStyle to make the ID yellow if the user is running PS 7.2 or newer
+    } else {
+        $packageTitle = "$name ($id)" # Otherwise leave it as normal
+    }
+
     # Run the selected action
     switch($Action){
         "install" { 
-            Write-Host "Installing $id..."
+            Write-Host "Installing $packageTitle..."
             $result = Install-WinGetPackage $id # Cmdlet will report its own progress
         }
         "uninstall" {
-            Write-Host "Uninstalling $id..."
+            Write-Host "Uninstalling $packageTitle..."
             $result = Uninstall-WinGetPackage $id 
         }
         "update" {
-            Write-Host "Updating $id..."
+            Write-Host "Updating $packageTitle..."
             $result = Update-WinGetPackage $id 
         }
     }
@@ -171,8 +161,7 @@ function Invoke-FuzzyWingetInstall {
     )
 
     # Get all packages from WinGet and format them for fzf
-    $availablePackages = Find-WinGetPackage | # Get all packages 
-    Select-Object -Property Source, Name, Id, Version | # Select only the properties we need
+    $availablePackages = Find-WinGetPackage | # Get all packages
     ForEach-Object { # Format the output so that it can be used by fzf
         $source = "$($PSStyle.Foreground.Magenta)$($_.Source)"
         $name = "$($PSStyle.Foreground.White)$($_.Name)"
@@ -199,8 +188,7 @@ function Invoke-FuzzyWingetUninstall{
     )
 
     # Get all packages from WinGet and format them for fzf
-    $installedPackages = Get-WinGetPackage | # Get all packages that don't have an unknown version
-    Select-Object -Property Source, Name, Id, Version | # Select only the properties we need
+    $installedPackages = Get-WinGetPackage | # Get all installed packages
     ForEach-Object { # Format the output so that it can be used by fzf
         # Source may be null if the package was installed manually or by the OS
         if(-not $_.Source){
@@ -234,11 +222,11 @@ function Invoke-FuzzyWingetUpdate{
     param(
         # No parameters yet
         # TODO: Same as Invoke-FuzzyWingetInstall
+        # TODO: Add a parameter to allow the user to see updates for package with unknown versions, like --include-unknown from winget CLI
     )
 
     # Get all updates available from WinGet and format them for fzf
     $updates = Get-WinGetPackage | Where-Object {($_.Version -ne "Unknown") -and $_.IsUpdateAvailable} | # Get all packages that have an update available and don't have an unknown version
-    Select-Object -Property Source, Name, Id, Version, AvailableVersions | # Select only the properties we need
     ForEach-Object { # Format the output so that it can be used by fzf
         $source = "$($PSStyle.Foreground.Magenta)$($_.Source)"
         $name = "$($PSStyle.Foreground.White)$($_.Name)"
