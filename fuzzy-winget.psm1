@@ -38,9 +38,6 @@ TODO: Add support for using multiple package managers at once, using the package
 TODO: Add support for other operating systems (e.g. Linux, macOS)
 -   TODO: Add support for other package managers (e.g. apt, pacman, etc.)
 
--- POSSIBLE -- (Just ideas, not sure if they are necessary/possible/feasible)
-TODO: Convert the preview command to native cmd syntax so that it can be run in a cmd shell, stops the need for creating tonnes of powershell instances
-
 -- CHORES -- (Anytime, preferably before major/minor release)
 - Powershell stuff -
 TODO: Write documentation for the functions, examples, etc.
