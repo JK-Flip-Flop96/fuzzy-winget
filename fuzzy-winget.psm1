@@ -79,20 +79,23 @@ function Invoke-FuzzyWinget {
     # TODO: Define an alternate preview command for when the user is running an older versions of powershell, PSStyle doesn't work in WindowsPowerShell or Powershell Core < 7.2 (See issue #1)
     # Define the preview command for fzf to use - Better to define it here for readability, defined as an array to make it easier to read
     $fzfPreviewArgs = @(
-        # Launch a new PowerShell instance to run the preview command in and pipe the selected line to it
-        "echo {} | $PSExecutable -noLogo -noProfile -Command `"" 
+        # Launch a new PowerShell instance to run the preview command
+        "$PSExecutable -noLogo -noProfile -Command `"" 
+
+        # The following lines are literal strings, double quotes are escaped with a back slash as fzf uses double quotes to delimit the command
 
         # Get the ID from the selected line
-        '$id = $input | Select-String -Pattern \"\((.*?)\)\" | ForEach-Object { $_.Matches.Groups[1].Value };'
+        '$id = Select-String -InputObject \"{}\" -Pattern \"\((.*?)\)\" -AllMatches | ForEach-Object { $_.Matches.Groups[-1].Value };' 
         
+        # TODO: Convert all that follows this this to use the powershell cmdlet to get the package details
         # Call winget show on the highlighted package and remove the word "Found" from the output 
-        '$info = $(winget show $id) -replace \"^\s*Found\s*\", \"\";'
+        '$(winget show $id) -replace \"^\s*Found\s*\", \"\"'
         
         # Change the name of the package to be bold and the id of the package to be bold and yellow
-        '$info = $info -replace \"(^.*) \[(.*)\]$\", \"$($PSStyle.Bold)`$1 ($($PSStyle.Foreground.Yellow)`$2$($PSStyle.Foreground.BrightWhite))$($PSStyle.BoldOff)\";'
+        '-replace \"(^.*) \[(.*)\]$\", \"$($PSStyle.Bold)`$1 ($($PSStyle.Foreground.Yellow)`$2$($PSStyle.Foreground.BrightWhite))$($PSStyle.BoldOff)\"'
 
         # Change the keys to be cyan and the values to be white - not bright white to emphasise the keys and header
-        '$info -replace \"(^\S[a-zA-Z0-9 ]+:(?!/))\", \"$($PSStyle.Foreground.Cyan)`$1$($PSStyle.Foreground.White)\""'
+        '-replace \"(^\S[a-zA-Z0-9 ]+:(?!/))\", \"$($PSStyle.Foreground.Cyan)`$1$($PSStyle.Foreground.White)\""'
     ) -join "" # Join the array into a single string
 
     
@@ -109,8 +112,8 @@ function Invoke-FuzzyWinget {
     # TODO: Allow the user to select multiple packages
 
     # Get the ID and package name from the selected line
-    $id = $package | Select-String -Pattern "\((.*?)\)" | ForEach-Object { $_.Matches.Groups[1].Value }
-    $name = $package | Select-String -Pattern "\s(.*) \(" | ForEach-Object { $_.Matches.Groups[1].Value }
+    $id = $package | Select-String -Pattern "\((.*?)\)" -AllMatches | ForEach-Object { $_.Matches.Groups[-1].Value }
+    $name = $package | Select-String -Pattern "\s(.*) \(" -AllMatches | ForEach-Object { $_.Matches.Groups[-1].Value }
 
     # If the ID is empty return
     if(-not $id){
@@ -124,8 +127,11 @@ function Invoke-FuzzyWinget {
     if ($PSVersionTable.PSVersion.Major -ge 7 -and $PSVersionTable.PSVersion.Minor -ge 2) {
         $packageTitle = "$name ($($PSStyle.Foreground.Yellow)$id$($PSStyle.Foreground.BrightWhite))" # Use PSStyle to make the ID yellow if the user is running PS 7.2 or newer
     } else {
-        $packageTitle = "$name ($id)" # Otherwise leave it as normal
+        $packageTitle = "$name ($id)"  # Otherwise leave it as normal
     }
+
+    # Remove any remaining whitespace
+    $packageTitle = $packageTitle.Trim() 
 
     # Run the selected action
     switch($Action){
