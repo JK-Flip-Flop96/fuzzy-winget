@@ -14,9 +14,9 @@ if ($source -eq "winget" -or $source -eq "msstore") {
     $info = $info -replace "(^.*) \[(.*)\]$", "$($PSStyle.Bold)`$1 ($($PSStyle.Foreground.Yellow)`$2$($PSStyle.Foreground.BrightWhite))$($PSStyle.BoldOff)"
 
     # Change the keys to be cyan and the values to be white - not bright white to emphasise the keys and header
-    $info -replace "(^\S[a-zA-Z0-9 ]+:(?!/))", "$($PSStyle.Foreground.Cyan)`$1$($PSStyle.Foreground.White)"
+    $info -replace "(^[a-zA-Z0-9 ]+:(?!/))", "$($PSStyle.Foreground.Cyan)`$1$($PSStyle.Foreground.White)"
     # $info is written to the preview window here
 } else {
     # If the package is not from a known source then display an error message
-    Write-Host "Cannot get package information for this source." -ForegroundColor Red
+    "$($PSStyle.Foreground.Yellow)Cannot get package information for this source."
 }
