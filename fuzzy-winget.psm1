@@ -63,6 +63,10 @@ function Invoke-FuzzyWinget {
         [ValidateSet("install", "uninstall", "update")] # Confirms that the action is one of the three supported actions
         [string]$Action,
 
+        [Parameter(Mandatory=$true)]
+        [ValidateSet("winget")] # Confirms that the source is one of the supported sources
+        [string[]]$Sources, 
+
         [Parameter(Mandatory=$true, ValueFromPipeline=$true)] # Confirms that there is at least one package to act on
         [string[]]$Packages
     )
@@ -106,7 +110,7 @@ function Invoke-FuzzyWinget {
 
     # Get the ID and package name from the selected line
     $id = $package | Select-String -Pattern "\((.*?)\)" | ForEach-Object { $_.Matches.Groups[1].Value }
-    $name = $package | Select-String -Pattern "(.*) \(" | ForEach-Object { $_.Matches.Groups[1].Value }
+    $name = $package | Select-String -Pattern "\s(.*) \(" | ForEach-Object { $_.Matches.Groups[1].Value }
 
     # If the ID is empty return
     if(-not $id){
@@ -176,7 +180,7 @@ function Invoke-FuzzyWingetInstall {
     $availablePackages | Out-String | Set-Content -Path $env:TEMP\fuzzywinget\availablePackages.txt
 
     # Call the helper function to install the selected packages
-    Invoke-FuzzyWinget -Action install -Packages $availablePackages
+    Invoke-FuzzyWinget -Action install -Packages $availablePackages -Sources "winget"
 }
 
 # Allow the user to select a winget package and install it
@@ -192,8 +196,7 @@ function Invoke-FuzzyWingetUninstall{
     ForEach-Object { # Format the output so that it can be used by fzf
         # Source may be null if the package was installed manually or by the OS
         if(-not $_.Source){
-            $_.Source = "N/A" # Set the source to N/A if it is null, mainly for formatting
-            $source = "$($PSStyle.Foreground.BrightBlack)$($_.Source)" # Make the source grey to make other sources stand out
+            $source = "$($PSStyle.Foreground.BrightBlack)N/A" # Make the source grey to make other sources stand out
         }else{
             $source = "$($PSStyle.Foreground.Magenta)$($_.Source)"
         }
@@ -213,7 +216,7 @@ function Invoke-FuzzyWingetUninstall{
     }
 
     # Invoke the helper function to uninstall the selected packages
-    Invoke-FuzzyWinget -Action uninstall -Packages $installedPackages
+    Invoke-FuzzyWinget -Action uninstall -Packages $installedPackages -Sources "winget"
 }
 
 # Allow the user to select a winget package and update it
@@ -239,5 +242,5 @@ function Invoke-FuzzyWingetUpdate{
     }
 
     # Invoke the helper function to update the selected packages
-    Invoke-FuzzyWinget -Action update -Packages $updates
+    Invoke-FuzzyWinget -Action update -Packages $updates -Sources "winget"
 }
