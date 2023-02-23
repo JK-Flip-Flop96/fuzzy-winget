@@ -75,34 +75,9 @@ function Invoke-FuzzyWinget {
     # Define the ps executable to use for the preview command, pwsh for core and powershell for desktop
     $PSExecutable = if ($PSVersionTable.PSEdition -eq "Core") { "pwsh" } else { "powershell" } 
 
-    # TODO: Somehow convert this to a call to a function so that the preview command can be changed by the user/developer in one place
-    # TODO: Define an alternate preview command for when the user is running an older versions of powershell, PSStyle doesn't work in WindowsPowerShell or Powershell Core < 7.2 (See issue #1)
-    # Define the preview command for fzf to use - Better to define it here for readability, defined as an array to make it easier to read
-    $fzfPreviewArgs = @(
-        # Launch a new PowerShell instance to run the preview command
-        "$PSExecutable -noLogo -noProfile -Command `"" 
-
-        # The following lines are literal strings, double quotes are escaped with a back slash as fzf uses double quotes to delimit the command
-
-        # Get the ID from the selected line
-        '$id = Select-String -InputObject \"{}\" -Pattern \"\((.*?)\)\" -AllMatches | ForEach-Object { $_.Matches.Groups[-1].Value };' 
-        
-        # TODO: Convert all that follows this this to use the powershell cmdlet to get the package details
-        # Call winget show on the highlighted package and remove the word "Found" from the output 
-        '$(winget show $id) -replace \"^\s*Found\s*\", \"\"'
-        
-        # Change the name of the package to be bold and the id of the package to be bold and yellow
-        '-replace \"(^.*) \[(.*)\]$\", \"$($PSStyle.Bold)`$1 ($($PSStyle.Foreground.Yellow)`$2$($PSStyle.Foreground.BrightWhite))$($PSStyle.BoldOff)\"'
-
-        # Change the keys to be cyan and the values to be white - not bright white to emphasise the keys and header
-        '-replace \"(^\S[a-zA-Z0-9 ]+:(?!/))\", \"$($PSStyle.Foreground.Cyan)`$1$($PSStyle.Foreground.White)\""'
-    ) -join "" # Join the array into a single string
-
-    
-
     # Format the packages for fzf and pipe them to fzf for selection
     $package = $Packages | Format-Table -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") } |
-        fzf --ansi --reverse --preview "$fzfPreviewArgs" --preview-window '50%,border-left' --prompt=' WinGet >'
+        fzf --ansi --reverse --preview "$PSExecutable -noLogo -noProfile -nonInteractive -File `"$PSScriptRoot\fuzzy-package-preview.ps1`" {}" --preview-window '50%,border-left' --prompt=' >'
 
     # If the user didn't select anything return
     if(-not $package){
