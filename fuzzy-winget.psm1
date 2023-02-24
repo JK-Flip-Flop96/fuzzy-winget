@@ -41,7 +41,7 @@ TODO: Add support for other operating systems (e.g. Linux, macOS)
 -- CHORES -- (Anytime, preferably before major/minor release)
 - Powershell stuff -
 TODO: Write documentation for the functions, examples, etc.
-TODO: Release to the PowerShell Gallery? - only once the module is in a known working state
+TODO: Release to the PowerShell Gallery? - only once the module is in a known working state, probably dependant on the winget PowerShell module being released to the gallery
 
 - GitHub stuff -
 TODO: Write the README.md
@@ -74,7 +74,7 @@ function Invoke-FuzzyWinget {
 
     # Format the packages for fzf and pipe them to fzf for selection
     $package = $Packages | Format-Table -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") } |
-        fzf --ansi --reverse --preview "$PSExecutable -noLogo -noProfile -nonInteractive -File `"$PSScriptRoot\fuzzy-package-preview.ps1`" {}" --preview-window '50%,border-left' --prompt=' >'
+        fzf --ansi --reverse --preview "$PSExecutable -noLogo -noProfile -nonInteractive -File `"$PSScriptRoot\Scripts\Preview.ps1`" {}" --preview-window '50%,border-left' --prompt=' >'
 
     # If the user didn't select anything return
     if(-not $package){
