@@ -63,14 +63,19 @@ function Invoke-FuzzyWinget {
         "install" { 
             Write-Host "Installing $packageTitle..."
             $result = Install-WinGetPackage $id # Cmdlet will report its own progress
+
+            # Add the command to the history file so that the user can easily rerun it - works but requires a restart of the shell to take effect
+            Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "Install-WinGetPackage $id"
         }
         "uninstall" {
             Write-Host "Uninstalling $packageTitle..."
-            $result = Uninstall-WinGetPackage $id 
+            $result = Uninstall-WinGetPackage $id
+            Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "Uninstall-WinGetPackage $id"
         }
         "update" {
             Write-Host "Updating $packageTitle..."
-            $result = Update-WinGetPackage $id 
+            $result = Update-WinGetPackage $id
+            Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "Update-WinGetPackage $id"
         }
     }
 
