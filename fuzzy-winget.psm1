@@ -5,49 +5,6 @@
 # License: MIT
 # Repository: https://github.com/JK-Flip-Flop96/Fuzzy-Winget
 
-<# -- TODO --
-Dependant todo items are indented.
-Other todo items are contained within the code if they are specific to a function or block of code.
-The TODOs are grouped by priority, with the most important items at the top.
-TODOs are removed once they are completed.
-
--- SOON -- (Before 0.2.0)
-TODO: Ensure that the module works on PowerShell Core 7.1 and below, may require reduced functionality depending on the version (See issue #1)
-TODO: Add a function to search for package details (winget search) and display them (winget show). This should be a wrapper around the Invoke-FuzzyWinget function
--   TODO: Add keybindings for this function, e.g. Ctrl+Shift+I for install, Ctrl+Shift+U for uninstall, Ctrl+Shift+Y for update
-TODO: Add default aliases
-
--- FUTURE -- (Before 1.0.0)
-TODO: Cache the list of packages to speed up subsequent invocations - especially useful for the search/install function
-TODO: Allow more than one package to be selected, using the --multi flag
-TODO: Add support for other Windows package managers (e.g. Chocolatey, Scoop)
--   TODO: Offer to install fzf where required - now delayed until scoop is supported
--   TODO: Allow the user to specify which package managers to use during invocation
--   TODO: Detect which package managers are available
-TODO: Add support for PowerShellGet (e.g. Install-Module, Install-Script, etc.)
--   TODO: Offer to install the winget PowerShell module if it is not installed (Only possible once the module is published to the PowerShell Gallery)
-TODO: Add support for langauge specific package managers (e.g. Rust's Cargo, Python's Pip, C++'s vcpkg, C#'s NuGet, etc.)
-TODO: Add support for using multiple package managers at once, using the package manager's name as the source
-
--- FAR FUTURE -- (1.1.0 or beyond, maybe never)
-TODO: Add support for other operating systems (e.g. Linux, macOS)
--   TODO: Add support for other package managers (e.g. apt, pacman, etc.)
-
--- CHORES -- (Anytime, preferably before major/minor release)
-- Powershell stuff -
-TODO: Write documentation for the functions, examples, etc.
-TODO: Release to the PowerShell Gallery? - only once the module is in a known working state, probably dependant on the winget PowerShell module being released to the gallery
-TODO: Conform to the PowerShell style guide as much as possible
-
-- GitHub stuff -
-TODO: Write the README.md
-TODO: Write a CONTRIBUTING.md if anyone actually wants to contribute
-TODO: Releases? Maybe? I don't know how to do that yet
-
-- Meta stuff -
-TODO: Move the TODOs to a separate file? ROADMAP.md? This block is getting a bit long.
-#>
-
 # Helper function to handle the actual running of winget commands for the other functions in this module
 function Invoke-FuzzyWinget {
     [CmdletBinding()]
