@@ -59,7 +59,7 @@ function Invoke-FuzzyWinget {
         # Run the selected action
         switch($Action){
             "install" { 
-                Write-Host "[$source] Installing $packageTitle..."
+                Write-Host "[$source] Installing $packageTitle"
 
                 # TODO: Different sources have different ways of installing packages
                 $result = Install-WinGetPackage $id # Cmdlet will report its own progress
@@ -68,17 +68,18 @@ function Invoke-FuzzyWinget {
                 Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "Install-WinGetPackage $id"
             }
             "uninstall" {
-                Write-Host "[$source] Uninstalling $packageTitle..."
+                Write-Host "[$source] Uninstalling $packageTitle"
                 $result = Uninstall-WinGetPackage $id
                 Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "Uninstall-WinGetPackage $id"
             }
             "update" {
-                Write-Host "[$source] Updating $packageTitle..."
+                Write-Host "[$source] Updating $packageTitle"
                 $result = Update-WinGetPackage $id
                 Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "Update-WinGetPackage $id"
             }
         }
 
+        # TODO: Different sources have different ways of reporting the result of the action
         # Report the result to the user
         if($result.status -eq "Ok"){
             Write-Host (Get-Culture).TextInfo.ToTitleCase("$action succeeded") -ForegroundColor Green # Convert the action to title case for display
