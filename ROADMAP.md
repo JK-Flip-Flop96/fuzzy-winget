@@ -2,18 +2,15 @@
 
 ## Soon (Before 1.0.0)
 - Ensure that the module works on PowerShell Core 7.1 and below, may require reduced functionality depending on the version (See [issue #1](https://github.com/JK-Flip-Flop96/fuzzy-winget/issues/1))
-- Add a function to pure search function for package details (winget search).
 - Add default keybindings
 - Add default aliases
 - Cache the list of packages to speed up subsequent invocations - especially useful for the search/install function
-- Allow more than one package to be selected, using fzf's --multi flag
 - Add support for other Windows package managers (e.g. Chocolatey, Scoop)
   - Offer to install fzf where required - now delayed until scoop is supported
   - Allow the user to specify which package managers to use during invocation
   - Detect which package managers are available
 
 ## Future (After 1.0.0)
-
 - Add support for PowerShellGet (e.g. Install-Module, Install-Script, etc.)
   - Offer to install the winget PowerShell module if it is not installed (Only possible once the module is published to the PowerShell Gallery)
 - Add support for langauge specific package managers (e.g. Rust's Cargo, Python's Pip, C++'s vcpkg, C#'s NuGet, etc.)

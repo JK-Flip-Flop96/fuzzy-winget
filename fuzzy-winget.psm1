@@ -21,72 +21,73 @@ function Invoke-FuzzyWinget {
         [string[]]$Packages
     )
 
-    # TODO: Can I differentiate between pwsh and pwsh-preview?
     # Define the ps executable to use for the preview command, pwsh for core and powershell for desktop
     $PSExecutable = if ($PSVersionTable.PSEdition -eq "Core") { "pwsh" } else { "powershell" } 
 
     # Format the packages for fzf and pipe them to fzf for selection
-    $package = $Packages | Format-Table -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") } |
-        fzf --ansi --reverse --preview "$PSExecutable -noLogo -noProfile -nonInteractive -File `"$PSScriptRoot\Scripts\Preview.ps1`" {}" --preview-window '50%,border-left' --prompt=' >'
+    $selectedPackages = $Packages | Format-Table -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") } |
+        fzf --ansi --reverse --multi --preview "$PSExecutable -noLogo -noProfile -nonInteractive -File `"$PSScriptRoot\Scripts\Preview.ps1`" {}" --preview-window '50%,border-left' --prompt=' >'
 
     # If the user didn't select anything return
-    if(-not $package){
+    if(-not $selectedPackages){
         return
     }
 
-    # TODO: Allow the user to select multiple packages
+    # Loop through the selected packages
+    foreach ($package in $selectedPackages) {
 
-    # Get the ID and package name from the selected line
-    $id = $package | Select-String -Pattern "\((.*?)\)" -AllMatches | ForEach-Object { $_.Matches.Groups[-1].Value }
-    $name = $package | Select-String -Pattern "\s(.*) \(" -AllMatches | ForEach-Object { $_.Matches.Groups[-1].Value }
+        # Extract the pertinent information from the selected package
+        $source = $package | Select-String -Pattern "^([\w\-]+)" | ForEach-Object { $_.Matches.Groups[1].Value } # All text before the first space
+        $name = $package | Select-String -Pattern "\s(.*) \(" -AllMatches | ForEach-Object { $_.Matches.Groups[-1].Value } # All text between the first space and the last opening bracket
+        $id = $package | Select-String -Pattern "\((.*?)\)" -AllMatches | ForEach-Object { $_.Matches.Groups[-1].Value } # All text between the last opening bracket and the last closing bracket
 
-    # If the ID is empty return
-    if(-not $id){
-        Write-Host "No ID found." -ForegroundColor Red # This should never happen, but just in case
-    }
-
-    # Capture the result of the action
-    $result = $null
-
-    # Define the package title for use in when reporting the action to the user  
-    if ($PSVersionTable.PSVersion.Major -ge 7 -and $PSVersionTable.PSVersion.Minor -ge 2) {
-        $packageTitle = "$name ($($PSStyle.Foreground.Yellow)$id$($PSStyle.Foreground.BrightWhite))" # Use PSStyle to make the ID yellow if the user is running PS 7.2 or newer
-    } else {
-        $packageTitle = "$name ($id)"  # Otherwise leave it as normal
-    }
-
-    # Remove any remaining whitespace
-    $packageTitle = $packageTitle.Trim() 
-
-    # Run the selected action
-    switch($Action){
-        "install" { 
-            Write-Host "Installing $packageTitle..."
-            $result = Install-WinGetPackage $id # Cmdlet will report its own progress
-
-            # Add the command to the history file so that the user can easily rerun it - works but requires a restart of the shell to take effect
-            Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "Install-WinGetPackage $id"
+        # If the ID is empty return
+        if(-not $id){
+            Write-Host "No ID found." -ForegroundColor Red # This should never happen, but just in case
         }
-        "uninstall" {
-            Write-Host "Uninstalling $packageTitle..."
-            $result = Uninstall-WinGetPackage $id
-            Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "Uninstall-WinGetPackage $id"
-        }
-        "update" {
-            Write-Host "Updating $packageTitle..."
-            $result = Update-WinGetPackage $id
-            Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "Update-WinGetPackage $id"
-        }
-    }
 
-    # Report the result to the user
-    if($result.status -eq "Ok"){
-        Write-Host (Get-Culture).TextInfo.ToTitleCase("$action succeeded") -ForegroundColor Green # Convert the action to title case for display
-    }else{
-        Write-Host (Get-Culture).TextInfo.ToTitleCase("$action failed") -ForegroundColor Red
+        # Define the package title for use in when reporting the action to the user  
+        if ($PSVersionTable.PSVersion.Major -ge 7 -and $PSVersionTable.PSVersion.Minor -ge 2) {
+            $packageTitle = "$name ($($PSStyle.Foreground.Yellow)$id$($PSStyle.Foreground.BrightWhite))" # Use PSStyle to make the ID yellow if the user is running PS 7.2 or newer
+        } else {
+            $packageTitle = "$name ($id)"  # Otherwise leave it as normal
+        }
 
-        # Output the full status if the update failed
-        $result | Format-List | Out-String | Write-Host
+        # Remove any remaining whitespace
+        $packageTitle = $packageTitle.Trim() 
+
+        # Run the selected action
+        switch($Action){
+            "install" { 
+                Write-Host "[$source] Installing $packageTitle..."
+
+                # TODO: Different sources have different ways of installing packages
+                $result = Install-WinGetPackage $id # Cmdlet will report its own progress
+
+                # Add the command to the history file so that the user can easily rerun it - works but requires a restart of the shell to take effect
+                Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "Install-WinGetPackage $id"
+            }
+            "uninstall" {
+                Write-Host "[$source] Uninstalling $packageTitle..."
+                $result = Uninstall-WinGetPackage $id
+                Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "Uninstall-WinGetPackage $id"
+            }
+            "update" {
+                Write-Host "[$source] Updating $packageTitle..."
+                $result = Update-WinGetPackage $id
+                Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "Update-WinGetPackage $id"
+            }
+        }
+
+        # Report the result to the user
+        if($result.status -eq "Ok"){
+            Write-Host (Get-Culture).TextInfo.ToTitleCase("$action succeeded") -ForegroundColor Green # Convert the action to title case for display
+        }else{
+            Write-Host (Get-Culture).TextInfo.ToTitleCase("$action failed") -ForegroundColor Red
+
+            # Output the full status if the update failed
+            $result | Format-List | Out-String | Write-Host
+        }
     }
 }
 
