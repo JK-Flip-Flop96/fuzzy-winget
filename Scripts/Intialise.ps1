@@ -3,8 +3,8 @@
 
 # Check if fzf is installed
 if (!(Get-Command fzf -ErrorAction SilentlyContinue)) {
-    Write-Host "fzf is not installed. Please install fzf before using this module" -ForegroundColor Red
-    exit
+    Write-Host "[Fuzzy-Winget] fzf is not installed. Please install fzf before using this module" -ForegroundColor Red
+    exit # The rest of the tests are pointless if fzf isn't installed
 }
 
 # Check the version of fzf, strip the commit hash
@@ -13,6 +13,6 @@ $testedVersion = "0.38.0" # TODO: Move this to the manifest?
 
 # Check if the version is greater than the minimum tested version
 if ($version -lt $testedVersion) {
-    Write-Host "fzf version is untested. Consider upgrading to fzf to version $testedVersion or greater" -ForegroundColor Yellow
+    Write-Host "[Fuzzy-Winget] fzf $version has not been tested with this module. Consider upgrading to fzf to version $testedVersion or greater" -ForegroundColor Yellow
     exit
 }
