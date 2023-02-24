@@ -11,11 +11,6 @@ Other todo items are contained within the code if they are specific to a functio
 The TODOs are grouped by priority, with the most important items at the top.
 TODOs are removed once they are completed.
 
--- IMMEDIATE -- (For 0.1.0)
-TODO: Verify that the installed fzf version has all of the required features
--   TODO: Offer to install the latest version of fzf if the installed version is too old
-TODO: Offer to install the latest version of fzf if it is not installed
-
 -- SOON -- (Before 0.2.0)
 TODO: Ensure that the module works on PowerShell Core 7.1 and below, may require reduced functionality depending on the version (See issue #1)
 TODO: Add a function to search for package details (winget search) and display them (winget show). This should be a wrapper around the Invoke-FuzzyWinget function
@@ -26,7 +21,7 @@ TODO: Add default aliases
 TODO: Cache the list of packages to speed up subsequent invocations - especially useful for the search/install function
 TODO: Allow more than one package to be selected, using the --multi flag
 TODO: Add support for other Windows package managers (e.g. Chocolatey, Scoop)
--   TODO: Offer to install fzf with a different package manager where required
+-   TODO: Offer to install fzf where required - now delayed until scoop is supported
 -   TODO: Allow the user to specify which package managers to use during invocation
 -   TODO: Detect which package managers are available
 TODO: Add support for PowerShellGet (e.g. Install-Module, Install-Script, etc.)
@@ -42,6 +37,7 @@ TODO: Add support for other operating systems (e.g. Linux, macOS)
 - Powershell stuff -
 TODO: Write documentation for the functions, examples, etc.
 TODO: Release to the PowerShell Gallery? - only once the module is in a known working state, probably dependant on the winget PowerShell module being released to the gallery
+TODO: Conform to the PowerShell style guide as much as possible
 
 - GitHub stuff -
 TODO: Write the README.md
