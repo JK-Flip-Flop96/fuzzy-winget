@@ -4,7 +4,14 @@
 # Description: A module of functions to interact with WinGet using fzf
 # License: MIT
 # Repository: https://github.com/JK-Flip-Flop96/Fuzzy-Winget
+##########################################################################################
 
+
+####################
+# Helper Functions #
+####################
+
+# TODO: This function is an abomination and needs to be improved
 # Helper function to handle the actual running of winget commands for the other functions in this module
 # NOTE: This function is not exported and should not be called directly
 function Invoke-FuzzyPackager {
@@ -136,165 +143,151 @@ function Invoke-FuzzyPackager {
     }
 }
 
-# Function to allow the user to select a winget package and install it
-function Invoke-FuzzyWingetInstall {
+#########################
+# User-facing functions #
+#########################
+
+function Invoke-FuzzyPackageInstall {
     [CmdletBinding()]
     param(
-        # No parameters yet
-        # TODO: Add parameters to allow the user to specify a source, version, etc.
+        [Parameter()]
+        [ValidateSet("winget", "scoop")]
+        [string[]]$Sources=@("winget", "scoop")      
     )
 
-    # Get all packages from WinGet and format them for fzf
-    $availablePackages = Find-WinGetPackage | # Get all packages
-    ForEach-Object { # Format the output so that it can be used by fzf
-        $source = "$($PSStyle.Foreground.Magenta)wg:$($_.Source)"
-        $name = "$($PSStyle.Foreground.White)$($_.Name)"
-        $id = "$($PSStyle.Foreground.Yellow)$($_.Id)$($PSStyle.Foreground.BrightWhite)" # Ensure the closing bracket is white
-        $version = "$($PSStyle.Foreground.Green)$($_.Version)"
+    # Collect all available packages
+    $availablePackages = @()
 
-        # Output the formatted string - these strings are the ones that will be displayed in fzf
-        "$source `t $name ($id) `t $version"
+    if($Sources.Contains("winget")){
+        # Get all packages from WinGet and format them for fzf
+        $availablePackages += Find-WinGetPackage | Format-WingetPackage
     }
-
-    # Cache the available packages so that we can use them in the preview window
-    $availablePackages | Out-String | Set-Content -Path $env:TEMP\fuzzywinget\availablePackages.txt
-
-    # Call the helper function to install the selected packages
-    Invoke-FuzzyPackager -Action install -Packages $availablePackages -Sources "winget"
-}
-
-# Allow the user to select a winget package and install it
-function Invoke-FuzzyWingetUninstall{
-    [CmdletBinding()]
-    param(
-        # No parameters yet
-        # TODO: Same as Invoke-FuzzyWingetInstall
-    )
-
-    # Get all packages from WinGet and format them for fzf
-    $installedPackages = Get-WinGetPackage | # Get all installed packages
-    ForEach-Object { # Format the output so that it can be used by fzf
-        # Source may be null if the package was installed manually or by the OS
-        if(-not $_.Source){
-            $source = "$($PSStyle.Foreground.BrightBlack)wg:N/A" # Make the source grey to make other sources stand out
-        }else{
-            $source = "$($PSStyle.Foreground.Magenta)wg:$($_.Source)"
-        }
-        
-        $name = "$($PSStyle.Foreground.White)$($_.Name)"
-        $id = "$($PSStyle.Foreground.Yellow)$($_.Id)$($PSStyle.Foreground.BrightWhite)" # Ensure the closing bracket is white
-        $version = "$($PSStyle.Foreground.Green)$($_.Version)"
-
-        # Output the formatted string - these strings are the ones that will be displayed in fzf
-        "$source `t $name ($id) `t $version"
-    }
-
-    # If there are no packages then exit - This should never happen
-    if($installedPackages.Count -eq 0){
-        Write-Host "No packages found" -ForegroundColor Yellow
-        return
-    }
-
-    # Invoke the helper function to uninstall the selected packages
-    Invoke-FuzzyPackager -Action uninstall -Packages $installedPackages -Sources "winget"
-}
-
-# Allow the user to select a winget package and update it
-function Invoke-FuzzyWingetUpdate{
-    [CmdletBinding()]
-    param(
-        # No parameters yet
-        # TODO: Same as Invoke-FuzzyWingetInstall
-        
-        # True if installed packages with unknown versions should be included 
-        [switch]$IncludeUnknown
-    )
-
-    # Get all updates available from WinGet and format them for fzf
-    $updates = Get-WinGetPackage | Where-Object {(($_.Version -ne "Unknown") -or $IncludeUnknown) -and $_.IsUpdateAvailable} |
-    ForEach-Object { # Format the output so that it can be used by fzf
-        $source = "$($PSStyle.Foreground.Magenta)wg:$($_.Source)"
-        $name = "$($PSStyle.Foreground.White)$($_.Name)"
-        $id = "$($PSStyle.Foreground.Yellow)$($_.Id)$($PSStyle.Foreground.BrightWhite)" # Ensure the closing bracket is white
-        $version = "$($PSStyle.Foreground.Red)$($_.Version)"
-        $latest_version = "$($PSStyle.Foreground.Green)$($_.AvailableVersions[0])" # Get the latest version from the array - this is the first element
-
-        # Output the formatted string - these strings are the ones that will be displayed in fzf
-        "$source `t $name ($id) `t $version $($PSStyle.Foreground.Cyan)-> $latest_version"
-    }
-
-    # Invoke the helper function to update the selected packages
-    Invoke-FuzzyPackager -Action update -Packages $updates -Sources "winget"
-}
-
-function Invoke-FuzzyScoopInstall {
-    [CmdletBinding()]
-    param(
-        # No parameters yet
-    )
-
-    # Get all packages from Scoop and format them for fzf
-    $availablePackages = scoop search | # Get all packages
-    ForEach-Object { # Format the output so that it can be used by fzf
-        $source = "$($PSStyle.Foreground.Magenta)sc:$($_.Source)"
-        $name = "$($PSStyle.Foreground.White)$($_.Name)"
-        $version = "$($PSStyle.Foreground.Green)$($_.Version)"
-
-        # Output the formatted string - these strings are the ones that will be displayed in fzf
-        "$source `t $name `t $version"
+    
+    if($Sources.Contains("scoop")){
+        # Get all packages from Scoop and format them for fzf
+        $availablePackages += scoop search 6> $null | Format-ScoopPackage
     }
 
     # Invoke the helper function to install the selected packages
-    Invoke-FuzzyPackager -Action install -Packages $availablePackages -Sources "scoop"
+    Invoke-FuzzyPackager -Action install -Packages $availablePackages -Sources $Sources
 }
 
-function Invoke-FuzzyScoopUninstall {
+function Invoke-FuzzyPackageUninstall {
     [CmdletBinding()]
     param(
-        # No parameters yet
+        [Parameter()]
+        [ValidateSet("winget", "scoop")]
+        [string[]]$Sources=@("winget", "scoop")      
     )
 
-    # Get all packages from Scoop and format them for fzf
-    $installedPackages = scoop list | # Get all installed packages
-    ForEach-Object { # Format the output so that it can be used by fzf
-        $source = "$($PSStyle.Foreground.Magenta)sc:$($_.Source)"
-        $name = "$($PSStyle.Foreground.White)$($_.Name)"
-        $version = "$($PSStyle.Foreground.Green)$($_.Version)"
+    # Collect all installed packages
+    $installedPackages = @()
+
+    if($Sources.Contains("winget")){
+        # Get all packages from WinGet and format them for fzf
+        $installedPackages += Get-WinGetPackage | Format-WingetPackage
+    }
+    
+    if($Sources.Contains("scoop")){
+        # Get all packages from Scoop and format them for fzf
+        $installedPackages += scoop list 6> $null | Format-ScoopPackage
+    }
+
+    # Invoke the helper function to uninstall the selected packages
+    Invoke-FuzzyPackager -Action uninstall -Packages $installedPackages -Sources $Sources
+}
+
+function Invoke-FuzzyPackageUpdate {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [ValidateSet("winget", "scoop")]
+        [string[]]$Sources=@("winget", "scoop"),
+
+        [switch]$IncludeUnknown
+    )
+
+    # Collect all updates
+    $updates = @()
+
+    if($Sources.Contains("winget")){
+        # Get all updates available from WinGet and format them for fzf
+        $updates += Get-WinGetPackage | Where-Object {(($_.Version -ne "Unknown") -or $IncludeUnknown) -and $_.IsUpdateAvailable} | Format-WingetPackage -isUpdate
+    }
+    
+    if($Sources.Contains("scoop")){
+        # Get all packages from Scoop and format them for fzf
+        $updates += scoop status 6> $null | Format-ScoopPackage -isUpdate
+    }
+
+    # Invoke the helper function to update the selected packages
+    Invoke-FuzzyPackager -Action update -Packages $updates -Sources $Sources
+}
+
+####################
+# Format Functions #
+####################
+
+# Formatter for all winget packages
+function Format-WingetPackage {
+    [CmdletBinding()]
+    param(
+        [Parameter(ValueFromPipeline)]
+        [object]$Package,
+
+        [switch]$isUpdate
+    )
+
+    process {
+        # Source may be null if the package was installed manually or by the OS
+        if(-not $Package.Source){
+            $source = "$($PSStyle.Foreground.BrightBlack)wg:N/A   " # Make the source grey to make other sources stand out, pad with spaces to align with other sources
+        }else{
+            $source = "$($PSStyle.Foreground.Magenta)wg:$($Package.Source)" # e.g. wg:winget, wg:msstore
+        }
+        
+        $name = "$($PSStyle.Foreground.White)$($Package.Name)"
+        $id = "$($PSStyle.Foreground.Yellow)$($Package.Id)$($PSStyle.Foreground.BrightWhite)" # Ensure the closing bracket is white
+
+        if ($isUpdate){
+            # For packages with updates, show the version change that will occur - e.g. 1.0.0 -> 1.0.1
+            $version = "$($PSStyle.Foreground.Red)$($Package.Version) $($PSStyle.Foreground.Cyan)-> $($PSStyle.Foreground.Green)$($Package.AvailableVersions[0])"
+        }else{
+            # For packages without updates, show the current version - e.g. 1.0.0
+            $version = "$($PSStyle.Foreground.Green)$($Package.Version)"
+        }
+
+        # Output the formatted string - these strings are the ones that will be displayed in fzf
+        "$source `t $name ($id) `t $version"
+    }
+}
+
+# Formatter for scoop packages without updates
+function Format-ScoopPackage {
+    [CmdletBinding()]
+    param(
+        [Parameter(ValueFromPipeline)]
+        [object]$Package,
+
+        [switch]$isUpdate
+    )
+
+    process {
+        $name = "$($PSStyle.Foreground.White)$($Package.Name)"
+
+        if ($isUpdate){
+            $source = "$($PSStyle.Foreground.Magenta)sc:scoop" # Bucket name is not returned by scoop status
+
+            # For packages with updates, show the version change that will occur - e.g. 1.0.0 -> 1.0.1
+            $version = "$($PSStyle.Foreground.Red)$($Package.'Installed version') $($PSStyle.Foreground.Cyan)-> $($PSStyle.Foreground.Green)$($Package.'Latest version')"
+        }else{
+            $source = "$($PSStyle.Foreground.Magenta)sc:$($Package.Source)" # e.g. sc:extras, sc:main
+
+            # For packages without updates, show the current version - e.g. 1.0.0
+            $version = "$($PSStyle.Foreground.Green)$($Package.Version)"
+        }
 
         # Output the formatted string - these strings are the ones that will be displayed in fzf
         "$source `t $name `t $version"
     }
-
-    # Invoke the helper function to uninstall the selected packages
-    Invoke-FuzzyPackager -Action uninstall -Packages $installedPackages -Sources "scoop"
-}
-
-function Invoke-FuzzyScoopUpdate {
-    param (
-        # No parameters yet
-    )
-    
-    # Get all packages from Scoop and format them for fzf
-    $packages = scoop status 
-
-    # Return if there are no packages
-    if($packages.Count -eq 0){
-        return # Just return - no need to print anything as scoop status will do that
-    }
-    
-    # WARNING: This is totally untested as I don't have any packages that need updating to test with
-
-    $updates = $packages | Where-Object {$_.'Latest version' -ne ""} | # Other packages are returned with info in other fields - ignore them
-    ForEach-Object { # Format the output so that it can be used by fzf
-        $source = "$($PSStyle.Foreground.Magenta)sc:scoop" # Bucket name is not returned by scoop status
-        $name = "$($PSStyle.Foreground.White)$($_.Name)"
-        $version = "$($PSStyle.Foreground.Red)$($_.'Installed version')"
-        $latest_version = "$($PSStyle.Foreground.Green)$($_.'Latest version')"
-
-        # Output the formatted string - these strings are the ones that will be displayed in fzf
-        "$source `t $name `t $version $($PSStyle.Foreground.Cyan)-> $latest_version"
-    }
-
-    # Invoke the helper function to update the selected packages
-    Invoke-FuzzyPackager -Action update -Packages $updates -Sources "scoop"
 }

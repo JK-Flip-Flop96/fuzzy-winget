@@ -4,7 +4,7 @@
 $selection = $args[0]
 
 # Get the source from the selected line
-$source = Select-String -InputObject $selection -Pattern "^([\w\-:]+)" | ForEach-Object { $_.Matches.Groups[1].Value };
+$source = Select-String -InputObject $selection -Pattern "^([\w\-:/]+)" | ForEach-Object { $_.Matches.Groups[1].Value };
 
 if ($source.StartsWith("wg:")) {
     if ($source -eq "wg:N/A") { # Used for manually installed/System packages
