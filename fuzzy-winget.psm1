@@ -163,11 +163,13 @@ function Invoke-FuzzyWingetUpdate{
     param(
         # No parameters yet
         # TODO: Same as Invoke-FuzzyWingetInstall
-        # TODO: Add a parameter to allow the user to see updates for package with unknown versions, like --include-unknown from winget CLI
+        
+        # True if installed packages with unknown versions should be included 
+        [switch]$IncludeUnknown
     )
 
     # Get all updates available from WinGet and format them for fzf
-    $updates = Get-WinGetPackage | Where-Object {($_.Version -ne "Unknown") -and $_.IsUpdateAvailable} | # Get all packages that have an update available and don't have an unknown version
+    $updates = Get-WinGetPackage | Where-Object {(($_.Version -ne "Unknown") -or $IncludeUnknown) -and $_.IsUpdateAvailable} |
     ForEach-Object { # Format the output so that it can be used by fzf
         $source = "$($PSStyle.Foreground.Magenta)$($_.Source)"
         $name = "$($PSStyle.Foreground.White)$($_.Name)"
