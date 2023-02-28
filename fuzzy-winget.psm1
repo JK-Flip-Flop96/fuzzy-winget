@@ -168,6 +168,12 @@ function Invoke-FuzzyPackageInstall {
         $availablePackages += scoop search 6> $null | Format-ScoopPackage
     }
 
+    # If no packages were found, exit
+    if($availablePackages.Count -eq 0){
+        Write-Host "No packages found." -ForegroundColor Red
+        return
+    }
+
     # Invoke the helper function to install the selected packages
     Invoke-FuzzyPackager -Action install -Packages $availablePackages -Sources $Sources
 }
@@ -187,10 +193,16 @@ function Invoke-FuzzyPackageUninstall {
         # Get all packages from WinGet and format them for fzf
         $installedPackages += Get-WinGetPackage | Format-WingetPackage
     }
-    
+        
     if($Sources.Contains("scoop")){
         # Get all packages from Scoop and format them for fzf
         $installedPackages += scoop list 6> $null | Format-ScoopPackage
+    }
+    
+    # If no packages were found, exit
+    if($installedPackages.Count -eq 0){
+        Write-Host "No packages found." -ForegroundColor Red # Not sure how this would happen, but just in case
+        return
     }
 
     # Invoke the helper function to uninstall the selected packages
@@ -218,6 +230,12 @@ function Invoke-FuzzyPackageUpdate {
     if($Sources.Contains("scoop")){
         # Get all packages from Scoop and format them for fzf
         $updates += scoop status 6> $null | Format-ScoopPackage -isUpdate
+    }
+
+    # If there are no updates available, exit
+    if($updates.Count -eq 0){
+        Write-Host "Everything is up to date" -ForegroundColor Green
+        return
     }
 
     # Invoke the helper function to update the selected packages
