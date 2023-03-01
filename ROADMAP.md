@@ -5,7 +5,7 @@
 - Add default keybindings
 - Add default aliases
 - Cache the list of packages to speed up subsequent invocations - especially useful for the search/install function <- #1 priority currently, install is catastrophically slow
-- Offer to install fzf where required - now delayed until scoop is supported
+- Offer to update fzf where required - Installation is now handled
 - Detect which package managers are available
 
 ## Future (After 1.0.0)
