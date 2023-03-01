@@ -1,7 +1,7 @@
 # NOTE: This script is run when the module is imported so we need to keep it as simple as possible.
 #       We don't want to negatively the startup time of user's shells.
 
-# Check if the user has any package managers installed
+# Check if the user has any package managers installed - this is only run if fzf is not installed so performance is less of an issue
 function Test-PackageManagers {
     $packageManagers = @{'winget' = $false
                          'scoop' = $false 
@@ -16,7 +16,7 @@ function Test-PackageManagers {
 
 # Check if fzf is installed
 if (!(Get-Command fzf -ErrorAction SilentlyContinue)) {
-    Write-Host "[Fuzzy-Winget] fzf is not installed. Please install fzf before using this module" -ForegroundColor Red
+    Write-Host "[Fuzzy-Winget] fzf is not installed. Attempting to install it now..." -ForegroundColor Yellow
     
     # Check if the user has any package managers installed
     $packageManagers = Test-PackageManagers
@@ -27,31 +27,51 @@ if (!(Get-Command fzf -ErrorAction SilentlyContinue)) {
         exit
     }
 
+    # Count the number of package managers that are installed
+    $installedPackageManagerCount = $($packageManagers.Keys | Where-Object {$packageManagers[$_] -eq $true} | Measure-Object | Select-Object -ExpandProperty Count)
+
     # If the user has multiple package managers installed then prompt them to select one
-    if ($packageManagers.Values -contains $true -and $packageManagers.Values | Where-Object {$_ -eq $true} | Measure-Object | Select-Object -ExpandProperty Count -gt 1) {
+    if ($installedPackageManagerCount -gt 1) {
         
-        # TODO: Improve this so that numbers aren't skipped if a package manager isn't installed
-        # Print a number next to each package manager that is installed
-        $packageManagers.Keys | ForEach-Object {
-            if ($packageManagers[$_] -eq $true) {
-                Write-Host "$($packageManagers.Keys.IndexOf($_)) - $_"
-            }
+        # Filter the package managers to only include the ones that are installed
+        $installedPackageManagers = $packageManagers.Keys | Where-Object {$packageManagers[$_] -eq $true} | ForEach-Object {$_.ToString()}
+
+        # Print the package managers that are installed
+        # e.g. [Number] PackageManager
+        Write-Host "Select a package manager to install fzf:"
+        for ($i = 0; $i -lt $installedPackageManagerCount; $i++) {
+            Write-Host "[$($i + 1)] $($installedPackageManagers[$i])"
         }
 
         # Prompt the user to select a package manager
-        $packageManager = Read-Host "Please select a package manager to install fzf with"
+        $UserSelection = Read-Host "[C]ancel or [Number] ->"
 
-        # Check if the user entered a valid number
-        if ($packageManager -lt 0 -or $packageManager -gt $packageManagers.Count) {
-            Write-Host "[Fuzzy-Winget] Invalid package manager number: $packageManager" -ForegroundColor Red
+        # Check if the user entered "c" or "C"
+        if ($UserSelection -eq "c" -or $UserSelection -eq "C") {
+            Write-Host "[Fuzzy-Winget] fzf is required to use this module" -ForegroundColor Red
             exit
         }
 
-        # Get the package manager name from the number
-        $packageManager = $packageManagers.Keys[$packageManager]
+        # Check if the user entered a valid number
+        if ($UserSelection -notmatch "^[0-9]+$") {
+            Write-Host "[Fuzzy-Winget] `"$UserSelection`" is not a valid number" -ForegroundColor Red
+            exit
+        }
+
+        # Check if the user entered a valid package manager number
+        # NOTE: The user enters a number starting at 1, but the array starts at 0
+        if ($UserSelection -gt $installedPackageManagerCount -or $UserSelection -eq 0) {
+            Write-Host "[Fuzzy-Winget] `"$UserSelection`" falls outside of the accepted range" -ForegroundColor Red
+            exit
+        }
+
+        # Get the package manager name from the number the user entered
+        $packageManager = $installedPackageManagers[$UserSelection - 1]
     } else {
         $packageManager = $packageManagers.Keys | Where-Object {$packageManagers[$_] -eq $true}
     }
+
+    Write-Host $packageManager
 
     # Install fzf using the selected package manager
     if ($packageManager -eq "winget") {
@@ -61,10 +81,9 @@ if (!(Get-Command fzf -ErrorAction SilentlyContinue)) {
     } elseif ($packageManager -eq "choco") {
         choco install fzf
     } else {
+        # This should never happen
         Write-Host "[Fuzzy-Winget] Unknown package manager: $packageManager" -ForegroundColor Red
     }
-
-
 }
 
 # Check the version of fzf, strip the commit hash
