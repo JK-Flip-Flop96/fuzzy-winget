@@ -4,11 +4,9 @@
 - Ensure that the module works on PowerShell Core 7.1 and below, may require reduced functionality depending on the version (See [issue #1](https://github.com/JK-Flip-Flop96/fuzzy-winget/issues/1))
 - Add default keybindings
 - Add default aliases
-- Cache the list of packages to speed up subsequent invocations - especially useful for the search/install function
-- Add support for other Windows package managers (e.g. Chocolatey, Scoop)
-  - Offer to install fzf where required - now delayed until scoop is supported
-  - Allow the user to specify which package managers to use during invocation
-  - Detect which package managers are available
+- Cache the list of packages to speed up subsequent invocations - especially useful for the search/install function <- #1 priority currently, install is catastrophically slow
+- Offer to update fzf where required - Installation is now handled
+- Detect which package managers are available
 
 ## Future (After 1.0.0)
 - Add support for PowerShellGet (e.g. Install-Module, Install-Script, etc.)

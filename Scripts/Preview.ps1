@@ -4,48 +4,52 @@
 $selection = $args[0]
 
 # Get the source from the selected line
-$source = Select-String -InputObject $selection -Pattern "^([\w\-:/]+)" | ForEach-Object { $_.Matches.Groups[1].Value };
+$source = Select-String -InputObject $selection -Pattern "^([\w\-:/]+)" | ForEach-Object { $_.Matches.Groups[1].Value }
 
 if ($source.StartsWith("wg:")) {
     if ($source -eq "wg:N/A") { # Used for manually installed/System packages
-        $source = "unknown" # Jump to the else statement in the if statement below
+        "$($PSStyle.Foreground.Yellow)Cannot get package information for manually installed or system packages."
     } else {
-        $source = "winget"
-
         # Get the content of the last pair of brackets from the selected line, this is the package id. Accounts for the case where the package name contains brackets
-        $id = Select-String -InputObject $selection -Pattern "\((.*?)\)" -AllMatches | ForEach-Object { $_.Matches.Groups[-1].Value };
+        $id = Select-String -InputObject $selection -Pattern "\((.*?)\)" -AllMatches | ForEach-Object { $_.Matches.Groups[-1].Value }
+
+        # NOTE: This script avoids using the winget module so that it can avoid the overhead of loading the module and the time it takes to load the module
+        # TODO: Update this if the winget CLI ever gets support for xml/json/etc output
+
+        # Call winget show on the highlighted package and remove the word "Found" from the output 
+        $info = $(winget show $id) -replace "^\s*Found\s*", ""
+
+        # Remove the "Failed to update source" message
+        $info = $info -replace "Failed to update source.*$", ""
+
+        # Change the name of the package to be bold and the id of the package to be bold and yellow
+        $info = $info -replace "(^.*) \[(.*)\]$", "$($PSStyle.Bold)`$1 ($($PSStyle.Foreground.Yellow)`$2$($PSStyle.Foreground.BrightWhite))$($PSStyle.BoldOff)"
+
+        # Change the keys to be cyan and the values to be white - not bright white to emphasise the keys and header
+        $info -replace "(^[a-zA-Z0-9 ]+:(?![/0-9]))", "$($PSStyle.Foreground.Cyan)`$1$($PSStyle.Foreground.White)"
     }
 } elseif ($source.StartsWith("sc:")) {
-    $source = "scoop"
-
     # Get the name of the package from the selected line, scoop does not have package ids
-    $id = Select-String -InputObject $selection -Pattern "\s([\w\-]+)" | ForEach-Object { $_.Matches.Groups[1].Value };
-} else {
-    # If we somehow get here then the source is not known - this will jump to the else statement in the if statement below
-    $source = "unknown"
-}
+    $id = Select-String -InputObject $selection -Pattern "\s([\w\-]+)" | ForEach-Object { $_.Matches.Groups[1].Value }
 
-# Different sources have different ways of getting the package information
-if ($source -eq "winget") { 
-    # NOTE: This script avoids using the winget module so that it can avoid the overhead of loading the module and the time it takes to load the module
-    # TODO: Update this if the winget CLI ever gets support for xml/json/etc output
+    # Scoop's info command returns a nice powershell hashtable so we can use Format-List to display it
+    scoop info $id | Format-List
+} elseif ($source.StartsWith("ch:")) {
+    # Get the name of the package from the selected line, choco does not have package ids
+    $id = Select-String -InputObject $selection -Pattern "\s([\w\-.]+)" | ForEach-Object { $_.Matches.Groups[1].Value }
 
-    # Call winget show on the highlighted package and remove the word "Found" from the output 
-    $info = $(winget show $id) -replace "^\s*Found\s*", ""
+    $info = $(choco info $id)
 
-    # Remove the "Failed to update source" message
-    $info = $info -replace "Failed to update source.*$", ""
-
-    # Change the name of the package to be bold and the id of the package to be bold and yellow
-    $info = $info -replace "(^.*) \[(.*)\]$", "$($PSStyle.Bold)`$1 ($($PSStyle.Foreground.Yellow)`$2$($PSStyle.Foreground.BrightWhite))$($PSStyle.BoldOff)"
+    # Remove the "Chocolatey v" message
+    $info = $info -replace "Chocolatey v.*$", ""
 
     # Change the keys to be cyan and the values to be white - not bright white to emphasise the keys and header
-    $info -replace "(^[a-zA-Z0-9 ]+:(?!/))", "$($PSStyle.Foreground.Cyan)`$1$($PSStyle.Foreground.White)"
-    # $info is written to the preview window here
-} elseif ($source -eq "scoop") {
-    # TODO: Write a nice preview for scoop packages, format-list is a good start
-    scoop info $id | Format-List
+    $info = $info -replace "(^[a-zA-Z0-9 ]+:(?![/0-9]))", "$($PSStyle.Foreground.Cyan)`$1$($PSStyle.Foreground.White)"
+
+    # Remove the "[x] packages found." message
+    $info -replace "[0-9]+ packages found.$", ""
+
 } else {
-    # If the package is not from a known source then display an error message
+    # If we somehow get here then the source is not known
     "$($PSStyle.Foreground.Yellow)Cannot get package information for this source."
 }

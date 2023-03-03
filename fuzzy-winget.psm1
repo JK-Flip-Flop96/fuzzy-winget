@@ -22,7 +22,7 @@ function Invoke-FuzzyPackager {
         [string]$Action,
 
         [Parameter(Mandatory=$true)]
-        [ValidateSet("winget", "scoop")] # Confirms that the source is one of the supported sources
+        [ValidateSet("winget", "scoop", "choco")] # Confirms that the source is one of the supported sources
         [string[]]$Sources, 
 
         [Parameter(Mandatory=$true, ValueFromPipeline=$true)] # Confirms that there is at least one package to act on
@@ -51,6 +51,8 @@ function Invoke-FuzzyPackager {
             $source = "winget" # Set the source to winget
         } elseif ($source.StartsWith("sc:")) { # If the source is a scoop bucket
             $source = "scoop" # Set the source to scoop
+        } elseif ($source.StartsWith("ch:")) { # If the source is a chocolatey source
+            $source = "choco" # Set the source to choco
         } else {
             Write-Host "Unknown source." -ForegroundColor Red # This should never happen, but just in case
         }
@@ -58,8 +60,8 @@ function Invoke-FuzzyPackager {
         if ($source -eq "winget"){
             $name = $package | Select-String -Pattern "\s(.*) \(" -AllMatches | ForEach-Object { $_.Matches.Groups[-1].Value } # All text between the first space and the last opening bracket
             $id = $package | Select-String -Pattern "\((.*?)\)" -AllMatches | ForEach-Object { $_.Matches.Groups[-1].Value } # All text between the last opening bracket and the last closing bracket
-        } elseif ($source -eq "scoop") {
-            # Get the name of the package from the selected line, scoop does not have package ids
+        } elseif ($source -eq "scoop" -or $source -eq "choco") {
+            # Get the name of the package from the selected line, scoop and choco don't have package ids
             $id = $($package -split "\s+")[1] # Scoop packages never have spaces in their names so this should always work
             $name = $id
         }
@@ -71,13 +73,13 @@ function Invoke-FuzzyPackager {
 
         # Define the package title for use in when reporting the action to the user  
         if ($PSVersionTable.PSVersion.Major -ge 7 -and $PSVersionTable.PSVersion.Minor -ge 2) {
-            if ($name -eq $id) { # If the name and id are the same (scoop packages)
+            if ($name -eq $id) { # If the name and id are the same (scoop/choco packages)
                 $packageTitle = "$($PSStyle.Foreground.Yellow)$id$($PSStyle.Foreground.BrightWhite)" 
             } else {
                 $packageTitle = "$name ($($PSStyle.Foreground.Yellow)$id$($PSStyle.Foreground.BrightWhite))" # Use PSStyle to make the ID yellow if the user is running PS 7.2 or newer
             }
         } else {
-            if ($name -eq $id) { # If the name and id are the same (scoop packages)
+            if ($name -eq $id) { # If the name and id are the same (scoop/choco packages)
                 $packageTitle = "$id" 
             } else {
                 $packageTitle = "$name ($id)" # If the user is running an older version of PS just use the default color
@@ -102,6 +104,9 @@ function Invoke-FuzzyPackager {
                 } elseif ($source -eq "scoop"){
                     $result = scoop install $id 
                     Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "scoop install $id"
+                } elseif ($source -eq "choco"){
+                    choco install $id -y # Don't capture output, needs -y flag to install without prompting
+                    Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "choco install $id -y"
                 }
             }
             "uninstall" {
@@ -112,6 +117,9 @@ function Invoke-FuzzyPackager {
                 } elseif ($source -eq "scoop"){
                     $result = scoop uninstall $id
                     Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "scoop uninstall $id"
+                } elseif ($source -eq "choco"){
+                    choco uninstall $id -y
+                    Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "choco uninstall $id -y"
                 }
             }
             "update" {
@@ -122,13 +130,16 @@ function Invoke-FuzzyPackager {
                 } elseif ($source -eq "scoop"){
                     $result = scoop update $id
                     Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "scoop update $id"
+                } elseif ($source -eq "choco"){
+                    choco upgrade $id -y
+                    Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "choco upgrade $id -y"
                 }
             }
         }
 
         # Report the result to the user
         if ($source -eq "winget"){
-            
+            # The WinGet cmdlets return a hashtable with a status key
             if($result.status -eq "Ok"){
                 Write-Host (Get-Culture).TextInfo.ToTitleCase("$action succeeded") -ForegroundColor Green # Convert the action to title case for display
             }else{
@@ -139,6 +150,8 @@ function Invoke-FuzzyPackager {
             }
         } elseif ($source -eq "scoop"){
             # Do Nothing atm, scoop's own output is sufficient
+        } elseif ($source -eq "choco"){
+            # Do Nothing atm, choco's own output is sufficient
         }
     }
 }
@@ -151,9 +164,11 @@ function Invoke-FuzzyPackageInstall {
     [CmdletBinding()]
     param(
         [Parameter()]
-        [ValidateSet("winget", "scoop")]
-        [string[]]$Sources=@("winget", "scoop")      
+        [ValidateSet("winget", "scoop", "choco")]
+        [string[]]$Sources=@("winget", "scoop", "choco")      
     )
+
+    # TODO: Show a progress bar or spinner while the packages are being fetched, it can take a while
 
     # Collect all available packages
     $availablePackages = @()
@@ -166,6 +181,11 @@ function Invoke-FuzzyPackageInstall {
     if($Sources.Contains("scoop")){
         # Get all packages from Scoop and format them for fzf
         $availablePackages += scoop search 6> $null | Format-ScoopPackage
+    }
+
+    if($Sources.Contains("choco")){
+        # Get all packages from Chocolatey and format them for fzf
+        $availablePackages += choco search -r | Format-ChocoPackage
     }
 
     # If no packages were found, exit
@@ -182,8 +202,8 @@ function Invoke-FuzzyPackageUninstall {
     [CmdletBinding()]
     param(
         [Parameter()]
-        [ValidateSet("winget", "scoop")]
-        [string[]]$Sources=@("winget", "scoop")      
+        [ValidateSet("winget", "scoop", "choco")]
+        [string[]]$Sources=@("winget", "scoop", "choco")      
     )
 
     # Collect all installed packages
@@ -197,6 +217,12 @@ function Invoke-FuzzyPackageUninstall {
     if($Sources.Contains("scoop")){
         # Get all packages from Scoop and format them for fzf
         $installedPackages += scoop list 6> $null | Format-ScoopPackage
+    }
+
+    if($Sources.Contains("choco")){
+        # TODO: Remove the --local-only flag once choco v2.0.0 is released
+        # Get all packages from Chocolatey and format them for fzf
+        $installedPackages += choco list --local-only -r | Format-ChocoPackage
     }
     
     # If no packages were found, exit
@@ -213,9 +239,10 @@ function Invoke-FuzzyPackageUpdate {
     [CmdletBinding()]
     param(
         [Parameter()]
-        [ValidateSet("winget", "scoop")]
-        [string[]]$Sources=@("winget", "scoop"),
+        [ValidateSet("winget", "scoop", "choco")]
+        [string[]]$Sources=@("winget", "scoop", "choco"),
 
+        # Include packages with an unknown version - for winget only
         [switch]$IncludeUnknown
     )
 
@@ -230,6 +257,11 @@ function Invoke-FuzzyPackageUpdate {
     if($Sources.Contains("scoop")){
         # Get all packages from Scoop and format them for fzf
         $updates += scoop status 6> $null | Format-ScoopPackage -isUpdate
+    }
+
+    if ($Sources.Contains("choco")){
+        # Get all packages from Chocolatey and format them for fzf
+        $updates += choco outdated -r | Format-ChocoPackage -isUpdate
     }
 
     # If there are no updates available, exit
@@ -259,7 +291,7 @@ function Format-WingetPackage {
     process {
         # Source may be null if the package was installed manually or by the OS
         if(-not $Package.Source){
-            $source = "$($PSStyle.Foreground.BrightBlack)wg:N/A   " # Make the source grey to make other sources stand out, pad with spaces to align with other sources
+            $source = "$($PSStyle.Foreground.Magenta)wg:$($PSStyle.Foreground.BrightBlack)N/A   " # Make the source grey to make other sources stand out, pad with spaces to align with other sources
         }else{
             $source = "$($PSStyle.Foreground.Magenta)wg:$($Package.Source)" # e.g. wg:winget, wg:msstore
         }
@@ -294,18 +326,50 @@ function Format-ScoopPackage {
         $name = "$($PSStyle.Foreground.White)$($Package.Name)"
 
         if ($isUpdate){
-            $source = "$($PSStyle.Foreground.Magenta)sc:scoop" # Bucket name is not returned by scoop status
+            $source = "$($PSStyle.Foreground.Cyan)sc:scoop" # Bucket name is not returned by scoop status
 
             # For packages with updates, show the version change that will occur - e.g. 1.0.0 -> 1.0.1
             $version = "$($PSStyle.Foreground.Red)$($Package.'Installed version') $($PSStyle.Foreground.Cyan)-> $($PSStyle.Foreground.Green)$($Package.'Latest version')"
         }else{
-            $source = "$($PSStyle.Foreground.Magenta)sc:$($Package.Source)" # e.g. sc:extras, sc:main
+            $source = "$($PSStyle.Foreground.Cyan)sc:$($Package.Source)" # e.g. sc:extras, sc:main
 
             # For packages without updates, show the current version - e.g. 1.0.0
             $version = "$($PSStyle.Foreground.Green)$($Package.Version)"
         }
 
         # Output the formatted string - these strings are the ones that will be displayed in fzf
+        "$source `t $name `t $version"
+    }
+}
+
+# Formatter for choco packages
+function Format-ChocoPackage {
+    [CmdletBinding()]
+    param(
+        [Parameter(ValueFromPipeline)]
+        [string]$Package,
+
+        # Tells the function to append the version change
+        [switch]$isUpdate
+    )
+
+    process {
+        # Split the package name and version
+        # e.g. 7zip|19.0|20.0 -> 7zip, 19.0, 20.0. name|currentVersion|newVersion
+        $PackageDetails = $Package -split '\|'
+
+        $name = "$($PSStyle.Foreground.White)$($PackageDetails[0])"
+        $source = "$($PSStyle.Foreground.Blue)ch:choco" # Choco doesn't report the source so just use choco
+
+        if ($isUpdate){
+            # For packages with updates, show the version change that will occur - e.g. 1.0.0 -> 1.0.1
+            $version = "$($PSStyle.Foreground.Red)$($PackageDetails[1]) $($PSStyle.Foreground.Cyan)-> $($PSStyle.Foreground.Green)$($PackageDetails[2])"
+        } else {
+            # For packages without updates, show the current version - e.g. 1.0.0
+            $version = "$($PSStyle.Foreground.Green)$($PackageDetails[1])"
+        }
+
+        # Output the formatted string - these strings are the ones that will scbe displayed in fzf
         "$source `t $name `t $version"
     }
 }
