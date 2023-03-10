@@ -167,27 +167,58 @@ function Invoke-FuzzyPackageInstall {
     param(
         [Parameter()]
         [ValidateSet("winget", "scoop", "choco")]
-        [string[]]$Sources=@("winget", "scoop", "choco")      
-    )
+        [string[]]$Sources=@("winget", "scoop", "choco"),
 
-    # TODO: Show a progress bar or spinner while the packages are being fetched, it can take a while
+        [switch]$UpdateSources
+    )
 
     # Collect all available packages
     $availablePackages = @()
 
     if($Sources.Contains("winget")){
+        # Update the WinGet package index if the user specified the -UpdateSources switch
+        if($UpdateSources){
+            Write-Host "Updating WinGet sources..." -NoNewline
+            
+            winget source update *> $null 
+
+            Write-Host " [Done]" -ForegroundColor Green
+        }
+
+        Write-Host "Fetching WinGet packages..." -NoNewline
+
         # Get all packages from WinGet and format them for fzf
         $availablePackages += Find-WinGetPackage | Format-WingetPackage
+
+        Write-Host " [Done]" -ForegroundColor Green
     }
     
     if($Sources.Contains("scoop")){
+        # Update the Scoop package index if the user specified the -UpdateSources switch
+        if($UpdateSources){
+            Write-Host "Updating Scoop sources..." -NoNewline
+
+            scoop update *> $null
+
+            Write-Host " [Done]" -ForegroundColor Green
+        }
+
+        Write-Host "Fetching Scoop packages..." -NoNewline
+
         # Get all packages from Scoop and format them for fzf
         $availablePackages += scoop search 6> $null | Format-ScoopPackage
+
+        Write-Host " [Done]" -ForegroundColor Green
     }
 
     if($Sources.Contains("choco")){
+        # Chocolatey doesn't have a way to update the package index, so we just fetch the packages
+        Write-Host "Fetching Chocolatey packages..." -NoNewline
+
         # Get all packages from Chocolatey and format them for fzf
         $availablePackages += choco search -r | Format-ChocoPackage
+
+        Write-Host " [Done]" -ForegroundColor Green
     }
 
     # If no packages were found, exit
@@ -212,19 +243,31 @@ function Invoke-FuzzyPackageUninstall {
     $installedPackages = @()
 
     if($Sources.Contains("winget")){
+        Write-Host "Getting Installed Winget packages..." -NoNewline
+
         # Get all packages from WinGet and format them for fzf
         $installedPackages += Get-WinGetPackage | Format-WingetPackage
+
+        Write-Host " [Done]" -ForegroundColor Green
     }
         
     if($Sources.Contains("scoop")){
+        Write-Host "Getting Installed Scoop packages..." -NoNewline
+
         # Get all packages from Scoop and format them for fzf
         $installedPackages += scoop list 6> $null | Format-ScoopPackage
+
+        Write-Host " [Done]" -ForegroundColor Green
     }
 
     if($Sources.Contains("choco")){
+        Write-Host "Getting Installed Chocolatey packages..." -NoNewline
+
         # TODO: Remove the --local-only flag once choco v2.0.0 is released
         # Get all packages from Chocolatey and format them for fzf
         $installedPackages += choco list --local-only -r | Format-ChocoPackage
+
+        Write-Host " [Done]" -ForegroundColor Green
     }
     
     # If no packages were found, exit
