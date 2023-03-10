@@ -38,6 +38,8 @@ function Invoke-FuzzyPackager {
 
     # If the user didn't select anything return
     if(-not $selectedPackages){
+        # Reset the lastexitcode to 0 then return
+        $global:LASTEXITCODE = 0
         return
     }
 
@@ -238,30 +240,68 @@ function Invoke-FuzzyPackageUninstall {
 function Invoke-FuzzyPackageUpdate {
     [CmdletBinding()]
     param(
+        # The sources to search for updates in
         [Parameter()]
-        [ValidateSet("winget", "scoop", "choco")]
-        [string[]]$Sources=@("winget", "scoop", "choco"),
+        [ValidateSet("winget", "scoop", "choco")] # Source names must match 
+        [string[]]$Sources=@("winget", "scoop", "choco"), # Default to all sources
 
         # Include packages with an unknown version - for winget only
-        [switch]$IncludeUnknown
+        [switch]$IncludeUnknown,
+
+        # Fetch updates for each source before looking for updates
+        [switch]$UpdateSources
     )
 
     # Collect all updates
     $updates = @()
 
     if($Sources.Contains("winget")){
+        if ($UpdateSources){
+            Write-Host "Updating WinGet sources..." -NoNewline
+
+            # Update the WinGet source list
+            winget source update *> $null
+
+            Write-Host " [Done]" -ForegroundColor Green
+        }
+
+        Write-Host "Fetching WinGet updates..." -NoNewline
+
         # Get all updates available from WinGet and format them for fzf
         $updates += Get-WinGetPackage | Where-Object {(($_.Version -ne "Unknown") -or $IncludeUnknown) -and $_.IsUpdateAvailable} | Format-WingetPackage -isUpdate
+
+        Write-Host " [Done]" -ForegroundColor Green
     }
     
     if($Sources.Contains("scoop")){
+
+        if ($UpdateSources){
+            Write-Host "Updating Scoop buckets..." -NoNewline
+
+            # Update the Scoop source list
+            scoop update *> $null
+
+            Write-Host " [Done]" -ForegroundColor Green
+        }
+
+        Write-Host "Fetching Scoop updates..." -NoNewline
+
         # Get all packages from Scoop and format them for fzf
         $updates += scoop status 6> $null | Format-ScoopPackage -isUpdate
+
+        Write-Host " [Done]" -ForegroundColor Green
     }
 
     if ($Sources.Contains("choco")){
+
+        # I don't think there's a way to update the source list for choco, so we'll just skip it
+
+        Write-Host "Fetching Chocolatey updates..." -NoNewline
+
         # Get all packages from Chocolatey and format them for fzf
         $updates += choco outdated -r | Format-ChocoPackage -isUpdate
+
+        Write-Host " [Done]" -ForegroundColor Green
     }
 
     # If there are no updates available, exit
