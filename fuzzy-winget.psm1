@@ -6,6 +6,25 @@
 # Repository: https://github.com/JK-Flip-Flop96/Fuzzy-Winget
 ##########################################################################################
 
+# Global Variables
+$global:FuzzyWinget = @{ # Create a global variable to store the module's data in
+    CacheDirectory = "$env:tmp\FuzzyPackages" # Set the default cache directory to the temp directory
+}
+
+# Set the module's cache directory to the default if it doesn't exist
+if (-not (Test-Path $global:FuzzyWinget.CacheDirectory)) {
+    New-Item -ItemType Directory -Path $global:FuzzyWinget.CacheDirectory -Force | Out-Null
+    New-Item -ItemType Directory -Path "$($global:FuzzyWinget.CacheDirectory)\List" -Force | Out-Null
+    New-Item -ItemType Directory -Path "$($global:FuzzyWinget.CacheDirectory)\Preview" -Force | Out-Null
+
+    New-Item -ItemType Directory -Path "$($global:FuzzyWinget.CacheDirectory)\List\winget" -Force | Out-Null
+    New-Item -ItemType Directory -Path "$($global:FuzzyWinget.CacheDirectory)\List\scoop" -Force | Out-Null
+    New-Item -ItemType Directory -Path "$($global:FuzzyWinget.CacheDirectory)\List\choco" -Force | Out-Null
+
+    New-Item -ItemType Directory -Path "$($global:FuzzyWinget.CacheDirectory)\Preview\winget" -Force | Out-Null
+    New-Item -ItemType Directory -Path "$($global:FuzzyWinget.CacheDirectory)\Preview\scoop" -Force | Out-Null
+    New-Item -ItemType Directory -Path "$($global:FuzzyWinget.CacheDirectory)\Preview\choco" -Force | Out-Null
+}
 
 ####################
 # Helper Functions #
@@ -32,9 +51,40 @@ function Invoke-FuzzyPackager {
     # Define the ps executable to use for the preview command, pwsh for core and powershell for desktop
     $PSExecutable = if ($PSVersionTable.PSEdition -eq "Core") { "pwsh" } else { "powershell" } 
 
+    $WindowTitle = (Get-Culture).TextInfo.ToTitleCase(" $Action Packages ") # Set the title of the fzf window to the action being performed
+    
+    # Set the colour of the tile based on the action being performed
+    $TitleColour = switch ($Action) {
+        "install" { "green" }
+        "uninstall" { "red" }
+        "update" { "yellow" }
+    }
+
     # Format the packages for fzf and pipe them to fzf for selection
     $selectedPackages = $Packages | Format-Table -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") } |
-        fzf --ansi --reverse --multi --preview "$PSExecutable -noLogo -noProfile -nonInteractive -File `"$PSScriptRoot\Scripts\Preview.ps1`" {}" --preview-window '50%,border-left' --prompt=' >'
+        fzf --ansi `
+            --multi `
+            --cycle `
+            --border "bold" `
+            --border-label "$WindowTitle" `
+            --border-label-pos=3 `
+            --color=label:$TitleColour `
+            --preview "$PSExecutable -noLogo -noProfile -nonInteractive -File `"$PSScriptRoot\Scripts\Preview.ps1`" {}" `
+            --preview-window '50%,border-left,wrap' `
+            --prompt=' >'
+
+    # FZF Arguments:
+    # --ansi: Enable ANSI color support
+    # --multi: Allow multiple selections
+    # --cycle: Allow cycling through the list
+    # --border: Enable a border around the fzf window
+    #   "bold": Set the border use heavy line drawing characters
+    # --border-label: Set the label for the border
+    # --border-label-pos: Set the position of the border label
+    # --color: Set the color of the border label
+    # --preview: Set the command to run for the preview window
+    # --preview-window: Set the size and position of the preview window
+    # --prompt: Set the prompt for the fzf window
 
     # If the user didn't select anything return
     if(-not $selectedPackages){
@@ -236,38 +286,94 @@ function Invoke-FuzzyPackageUninstall {
     param(
         [Parameter()]
         [ValidateSet("winget", "scoop", "choco")]
-        [string[]]$Sources=@("winget", "scoop", "choco")      
+        [string[]]$Sources=@("winget", "scoop", "choco"),
+
+        [Parameter()]
+        [int]$MaxCacheAge = 0
     )
 
     # Collect all installed packages
     $installedPackages = @()
 
     if($Sources.Contains("winget")){
-        Write-Host "Getting Installed Winget packages..." -NoNewline
+        # Check if the cache exists
+        if(!(Test-Path "$($global:FuzzyWinget.CacheDirectory)\List\winget\installed.txt")){
+            # If it doesn't exist, create it
+            New-Item -ItemType File -Path "$($global:FuzzyWinget.CacheDirectory)\List\winget\installed.txt" -Force | Out-Null
+        }
 
-        # Get all packages from WinGet and format them for fzf
-        $installedPackages += Get-WinGetPackage | Format-WingetPackage
+        # Check if the cache is older than the specified max age
+        if ((Get-Date).Subtract((Get-Item "$($global:FuzzyWinget.CacheDirectory)\List\winget\installed.txt").LastWriteTime).TotalMinutes -gt $MaxCacheAge){
+            Write-Host "Getting Installed Winget packages..." -NoNewline
 
-        Write-Host " [Done]" -ForegroundColor Green
+            # Get all packages from WinGet and format them for fzf
+            $installedWingetPackages += Get-WinGetPackage | Format-WingetPackage
+
+            # Save the list to the cache
+            $installedWingetPackages | Out-File "$($global:FuzzyWinget.CacheDirectory)\List\winget\installed.txt" -Encoding UTF8 -Force
+
+            # Add the packages to the list of installed packages
+            $installedPackages += $installedWingetPackages
+
+            Write-Host " [Done]" -ForegroundColor Green
+        }else{
+            # If the cache is still valid, use it
+            $installedPackages += Get-Content "$($global:FuzzyWinget.CacheDirectory)\List\winget\installed.txt"
+        }
     }
         
     if($Sources.Contains("scoop")){
-        Write-Host "Getting Installed Scoop packages..." -NoNewline
 
-        # Get all packages from Scoop and format them for fzf
-        $installedPackages += scoop list 6> $null | Format-ScoopPackage
+        if (!(Test-Path "$($global:FuzzyWinget.CacheDirectory)\List\scoop\installed.txt")){
+            # If it doesn't exist, create it
+            New-Item -ItemType File -Path "$($global:FuzzyWinget.CacheDirectory)\List\scoop\installed.txt" -Force | Out-Null
+        }
 
-        Write-Host " [Done]" -ForegroundColor Green
+        # Check if the cache is older than the specified max age
+        if ((Get-Date).Subtract((Get-Item "$($global:FuzzyWinget.CacheDirectory)\List\scoop\installed.txt").LastWriteTime).TotalMinutes -gt $MaxCacheAge){
+            Write-Host "Getting Installed Scoop packages..." -NoNewline
+
+            # Get all packages from Scoop and format them for fzf
+            $installedScoopPackages += scoop list 6> $null | Format-ScoopPackage
+
+            # Save the list to the cache
+            $installedScoopPackages | Out-File "$($global:FuzzyWinget.CacheDirectory)\List\scoop\installed.txt" -Encoding UTF8 -Force
+
+            # Add the packages to the list of installed packages
+            $installedPackages += $installedScoopPackages
+
+            Write-Host " [Done]" -ForegroundColor Green
+        } else {
+            # If the cache is still valid, use it
+            $installedPackages += Get-Content "$($global:FuzzyWinget.CacheDirectory)\List\scoop\installed.txt"
+        }
     }
 
     if($Sources.Contains("choco")){
-        Write-Host "Getting Installed Chocolatey packages..." -NoNewline
+        if (!(Test-Path "$($global:FuzzyWinget.CacheDirectory)\List\choco\installed.txt")){
+            # If it doesn't exist, create it
+            New-Item -ItemType File -Path "$($global:FuzzyWinget.CacheDirectory)\List\choco\installed.txt" -Force | Out-Null
+        }
 
-        # TODO: Remove the --local-only flag once choco v2.0.0 is released
-        # Get all packages from Chocolatey and format them for fzf
-        $installedPackages += choco list --local-only -r | Format-ChocoPackage
+        # Check if the cache is older than the specified max age
+        if ((Get-Date).Subtract((Get-Item "$($global:FuzzyWinget.CacheDirectory)\List\choco\installed.txt").LastWriteTime).TotalMinutes -gt $MaxCacheAge){
+            Write-Host "Getting Installed Chocolatey packages..." -NoNewline
 
-        Write-Host " [Done]" -ForegroundColor Green
+            # TODO: Remove the --local-only flag once choco v2.0 is released
+            # Get all packages from Chocolatey and format them for fzf
+            $installedChocoPackages += choco list --local-only -r | Format-ChocoPackage
+
+            # Save the list to the cache
+            $installedChocoPackages | Out-File "$($global:FuzzyWinget.CacheDirectory)\List\choco\installed.txt" -Encoding UTF8 -Force
+
+            # Add the packages to the list of installed packages
+            $installedPackages += $installedChocoPackages
+
+            Write-Host " [Done]" -ForegroundColor Green
+        } else {
+            # If the cache is still valid, use it
+            $installedPackages += Get-Content "$($global:FuzzyWinget.CacheDirectory)\List\choco\installed.txt"
+        }
     }
     
     # If no packages were found, exit

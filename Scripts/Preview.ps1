@@ -7,11 +7,30 @@ $selection = $args[0]
 $source = Select-String -InputObject $selection -Pattern "^([\w\-:/]+)" | ForEach-Object { $_.Matches.Groups[1].Value }
 
 if ($source.StartsWith("wg:")) {
+
+    
+
     if ($source -eq "wg:N/A") { # Used for manually installed/System packages
-        "$($PSStyle.Foreground.Yellow)Cannot get package information for manually installed or system packages."
+        $values = $selection -split "\t+"
+
+        # Get the package name from the second column
+        $name = $values[1] -replace "^\s*", ""
+        $name = $name -replace "\s*$", ""
+
+        # Make text inside the last pair of brackets yellow
+        $name = $name -replace "\(([^\(]*?)\)$", "($($PSStyle.Foreground.Yellow)`$1$($PSStyle.Foreground.BrightWhite))"
+
+        # Get the package version from the third column
+        $version = $values[2]
+
+        Write-Host "$($PSStyle.Bold)$name $($PSStyle.Reset)`n$($PSStyle.Foreground.Cyan)Version:$($PSStyle.Foreground.BrightWhite) $version"
+
+        "$($PSStyle.Foreground.BrightBlack)$($PSStyle.Italic)Cannot get more package information for manually installed or system packages.$($PSStyle.Reset)"
     } else {
         # Get the content of the last pair of brackets from the selected line, this is the package id. Accounts for the case where the package name contains brackets
         $id = Select-String -InputObject $selection -Pattern "\((.*?)\)" -AllMatches | ForEach-Object { $_.Matches.Groups[-1].Value }
+
+        # Get the package information from winget
 
         # NOTE: This script avoids using the winget module so that it can avoid the overhead of loading the module and the time it takes to load the module
         # TODO: Update this if the winget CLI ever gets support for xml/json/etc output
