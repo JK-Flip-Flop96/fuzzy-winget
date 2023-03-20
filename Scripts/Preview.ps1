@@ -7,25 +7,21 @@ $selection = $args[0]
 $source = Select-String -InputObject $selection -Pattern "^([\w\-:/]+)" | ForEach-Object { $_.Matches.Groups[1].Value }
 
 if ($source.StartsWith("wg:")) {
-
-    
-
+    # If the source is wg:N/A then the package is not in the winget index
     if ($source -eq "wg:N/A") { # Used for manually installed/System packages
         $values = $selection -split "\t+"
 
         # Get the package name from the second column
-        $name = $values[1] -replace "^\s*", ""
-        $name = $name -replace "\s*$", ""
+        # Remove leading and trailing whitespace
+        # Make the text between brackets yellow
+        $name = $values[1] -replace "^\s*", "" -replace "\s*$", "" -replace "\(([^\(]*?)\)$", "($($PSStyle.Foreground.Yellow)`$1$($PSStyle.Foreground.BrightWhite))"
 
-        # Make text inside the last pair of brackets yellow
-        $name = $name -replace "\(([^\(]*?)\)$", "($($PSStyle.Foreground.Yellow)`$1$($PSStyle.Foreground.BrightWhite))"
-
-        # Get the package version from the third column
-        $version = $values[2]
-
-        Write-Host "$($PSStyle.Bold)$name $($PSStyle.Reset)`n$($PSStyle.Foreground.Cyan)Version:$($PSStyle.Foreground.BrightWhite) $version"
+        # Display the name in bold. Highlight the version in cyan like the preview for winget packages
+        Write-Host "$($PSStyle.Bold)$name $($PSStyle.Reset)`n$($PSStyle.Foreground.Cyan)Version:$($PSStyle.Foreground.White) $($values[2])`n"
 
         "$($PSStyle.Foreground.BrightBlack)$($PSStyle.Italic)Cannot get more package information for manually installed or system packages.$($PSStyle.Reset)"
+
+        # TODO: Add support for getting more information about manually installed/System packages from the registry
     } else {
         # Get the content of the last pair of brackets from the selected line, this is the package id. Accounts for the case where the package name contains brackets
         $id = Select-String -InputObject $selection -Pattern "\((.*?)\)" -AllMatches | ForEach-Object { $_.Matches.Groups[-1].Value }
@@ -35,11 +31,9 @@ if ($source.StartsWith("wg:")) {
         # NOTE: This script avoids using the winget module so that it can avoid the overhead of loading the module and the time it takes to load the module
         # TODO: Update this if the winget CLI ever gets support for xml/json/etc output
 
-        # Call winget show on the highlighted package and remove the word "Found" from the output 
-        $info = $(winget show $id) -replace "^\s*Found\s*", ""
-
-        # Remove the "Failed to update source" message
-        $info = $info -replace "Failed to update source.*$", ""
+        # Call winget show on the highlighted package and remove the word "Found" and the "Failed to update source" message from the output
+        # Shift the array to the left by one to remove the first element which always a blank line
+        $null, $info = $(winget show $id) -replace "^\s*Found\s*", "" -replace "Failed to update source.*$", ""
 
         # Change the name of the package to be bold and the id of the package to be bold and yellow
         $info = $info -replace "(^.*) \[(.*)\]$", "$($PSStyle.Bold)`$1 ($($PSStyle.Foreground.Yellow)`$2$($PSStyle.Foreground.BrightWhite))$($PSStyle.BoldOff)"
