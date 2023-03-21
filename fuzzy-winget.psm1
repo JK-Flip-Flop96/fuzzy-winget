@@ -86,7 +86,7 @@ function Invoke-FuzzyPackager {
             --border-label "$WindowTitle" `
             --border-label-pos=3 `
             --color=label:$TitleColour `
-            --preview "$PSExecutable -noLogo -noProfile -nonInteractive -File `"$PSScriptRoot\Scripts\Preview.ps1`" {}" `
+            --preview "$PSExecutable -noLogo -noProfile -nonInteractive -File `"$PSScriptRoot\Scripts\Preview.ps1`" {} `"$($global:FuzzyWinget.CacheDirectory)\Preview`"" `
             --preview-window '50%,border-left,wrap' `
             --prompt=' >'
 
@@ -572,9 +572,9 @@ $SourceInfo = @{
         UpdateQuery = { scoop status 6> $null }
 
         # Package commands
-        InstallCommand = { Install-ScoopPackage }
-        UninstallCommand = { Uninstall-ScoopPackage }
-        UpdateCommand = { Update-ScoopPackage }
+        InstallCommand = { scoop install }
+        UninstallCommand = { scoop uninstall }
+        UpdateCommand = { scoop update }
 
         # Source commands
         RefreshCommand = { scoop update *> $null }
@@ -601,9 +601,9 @@ $SourceInfo = @{
         UpdateQuery = { choco outdated -r }
 
         # Package commands
-        InstallCommand = { Install-ChocoPackage }
-        UninstallCommand = { Uninstall-ChocoPackage }
-        UpdateCommand = { Update-ChocoPackage }
+        InstallCommand = { choco install }
+        UninstallCommand = { choco uninstall }
+        UpdateCommand = { choco upgrade }
 
         # Source commands
         RefreshCommand = { } # Choco doesn't have a refresh command

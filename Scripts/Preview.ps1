@@ -3,10 +3,14 @@
 # Take the highlighted line from the fuzzy search and get the package information from winget
 $selection = $args[0]
 
+$CacheDirectory = $args[1]
+
 # Get the source from the selected line
 $source = Select-String -InputObject $selection -Pattern "^([\w\-:/]+)" | ForEach-Object { $_.Matches.Groups[1].Value }
 
 if ($source.StartsWith("wg:")) {
+    $CacheDirectory = Join-Path $CacheDirectory "winget"
+
     # If the source is wg:N/A then the package is not in the winget index
     if ($source -eq "wg:N/A") { # Used for manually installed/System packages
         $values = $selection -split "\t+"
@@ -42,12 +46,29 @@ if ($source.StartsWith("wg:")) {
         $info -replace "(^[a-zA-Z0-9 ]+:(?![/0-9]))", "$($PSStyle.Foreground.Cyan)`$1$($PSStyle.Foreground.White)"
     }
 } elseif ($source.StartsWith("sc:")) {
+    $CacheDirectory = Join-Path $CacheDirectory "scoop"
+
     # Get the name of the package from the selected line, scoop does not have package ids
     $id = Select-String -InputObject $selection -Pattern "\s([\w\-]+)" | ForEach-Object { $_.Matches.Groups[1].Value }
 
-    # Scoop's info command returns a nice powershell hashtable so we can use Format-List to display it
-    scoop info $id | Format-List
+    $CacheFile = Join-Path $CacheDirectory "$id.txt"
+
+    # If the cache file does not exist then create it
+    if (!(Test-Path $CacheFile)) {
+        New-Item -ItemType File -Path $CacheFile -Force | Out-Null
+    }
+
+    # Check if the cache file is older than 1 day or if it is empty
+    if ((Get-Date).Subtract((Get-Item $CacheFile).LastWriteTime).Days -ge 1 -or (Get-Content $CacheFile).Count -eq 0) {
+        # If it is then update the cache file
+        scoop info $id | Tee-Object $CacheFile
+    }else{
+        # If it is not then read the cache file
+        $($(Get-Content $CacheFile) -split "`n" | ForEach-Object { $_ -replace '^([^:]*:)', "$($PSStyle.Foreground.Green)`$1$($PSStyle.Foreground.White)" }) -join "`n"
+    }
 } elseif ($source.StartsWith("ch:")) {
+    $CacheDirectory = Join-Path $CacheDirectory "choco"
+
     # Get the name of the package from the selected line, choco does not have package ids
     $id = Select-String -InputObject $selection -Pattern "\s([\w\-.]+)" | ForEach-Object { $_.Matches.Groups[1].Value }
 
