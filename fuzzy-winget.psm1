@@ -549,6 +549,7 @@ $SourceInfo = @{
     winget = @{
         # Source information
         Name = "winget"
+        DisplayName = "Windows Package Manager"
 
         # Package queries
         InstallQuery = { Find-WinGetPackage }
@@ -578,6 +579,7 @@ $SourceInfo = @{
     scoop = @{
         # Source information
         Name = "scoop"
+        DisplayName = "Scoop"
 
         # Package queries 
         InstallQuery = { scoop search 6> $null }
@@ -607,6 +609,7 @@ $SourceInfo = @{
     choco = @{
         # Source information
         Name = "choco"
+        DisplayName = "Chocolatey"
 
         # Package queries
         InstallQuery = { choco search -r }
@@ -636,6 +639,7 @@ $SourceInfo = @{
     psget = @{
         # Source information
         Name = "psget"
+        DisplayName = "PowerShellGet"
 
         # Package queries
         InstallQuery = { Find-Module }
