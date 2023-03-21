@@ -100,6 +100,8 @@ function Invoke-FuzzyPackager {
             $source = "scoop" # Set the source to scoop
         } elseif ($source.StartsWith("ch:")) { # If the source is a chocolatey source
             $source = "choco" # Set the source to choco
+        } elseif ($source.StartsWith("ps:")) { # If the source is a psget source
+            $source = "psget" # Set the source to psget
         } else {
             Write-Host "Unknown source." -ForegroundColor Red # This should never happen, but just in case
         }
@@ -549,6 +551,7 @@ $SourceInfo = @{
     winget = @{
         # Source information
         Name = "winget"
+        ShortName = "wg"
         DisplayName = "Windows Package Manager"
 
         # Package queries
@@ -579,6 +582,7 @@ $SourceInfo = @{
     scoop = @{
         # Source information
         Name = "scoop"
+        ShortName = "sc"
         DisplayName = "Scoop"
 
         # Package queries 
@@ -609,11 +613,12 @@ $SourceInfo = @{
     choco = @{
         # Source information
         Name = "choco"
+        ShortName = "ch"
         DisplayName = "Chocolatey"
 
         # Package queries
         InstallQuery = { choco search -r }
-        UninstallQuery = { choco list --local-only -r }
+        UninstallQuery = { choco list --local-only -r } # TODO: Remove --local-only once choco updates to 2.0
         UpdateQuery = { choco outdated -r }
 
         # Package commands
@@ -639,6 +644,7 @@ $SourceInfo = @{
     psget = @{
         # Source information
         Name = "psget"
+        ShortName = "ps"
         DisplayName = "PowerShellGet"
 
         # Package queries

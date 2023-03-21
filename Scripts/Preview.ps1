@@ -18,17 +18,35 @@ if ($source.StartsWith("wg:")) {
         # Get the package name from the second column
         # Remove leading and trailing whitespace
         # Make the text between brackets yellow
-        $name = $values[1] -replace "^\s*", "" -replace "\s*$", "" -replace "\(([^\(]*?)\)$", "($($PSStyle.Foreground.Yellow)`$1$($PSStyle.Foreground.BrightWhite))"
+        $name = $values[1] -replace "^\s*", "" -replace "\s*$", ""
+        $CacheFile = Join-Path $CacheDirectory "$name.txt"
 
-        # Display the name in bold. Highlight the version in cyan like the preview for winget packages
-        Write-Host "$($PSStyle.Bold)$name $($PSStyle.Reset)`n$($PSStyle.Foreground.Cyan)Version:$($PSStyle.Foreground.White) $($values[2])`n"
+        # Strip illegal characters from the file name
+        $CacheFile = $CacheFile -replace "[\\/:*?""<>|]", "_"
 
-        "$($PSStyle.Foreground.BrightBlack)$($PSStyle.Italic)Cannot get more package information for manually installed or system packages.$($PSStyle.Reset)"
+        # Style the package name
+        $name = "$($PSStyle.Foreground.White)$name" -replace "\(([^\(]*?)\)$", "($($PSStyle.Foreground.Yellow)`$1$($PSStyle.Foreground.White))"
+
+        # If the cache file does not exist then create it
+        if (!(Test-Path $CacheFile)) {
+            New-Item -ItemType File -Path $CacheFile -Force | Out-Null
+        }
+
+        # Check if the cache file is older than 1 day or if it is empty
+        if ((Get-Item $CacheFile).LastWriteTime -lt (Get-Date).AddDays(-1) -or (Get-Content $CacheFile).Length -eq 0) {
+            
+            # Display the name in bold. Highlight the version in cyan like the preview for winget packages
+            "$($PSStyle.Bold)$name $($PSStyle.Reset)`n$($PSStyle.Foreground.Cyan)Version:$($PSStyle.Foreground.White) $($values[2])`n$($PSStyle.Foreground.BrightBlack)$($PSStyle.Italic)Cannot get more package information for manually installed or system packages.$($PSStyle.Reset)" | Tee-Object -FilePath $CacheFile
+        }else{
+            Get-Content $CacheFile
+        }
 
         # TODO: Add support for getting more information about manually installed/System packages from the registry
     } else {
         # Get the content of the last pair of brackets from the selected line, this is the package id. Accounts for the case where the package name contains brackets
         $id = Select-String -InputObject $selection -Pattern "\((.*?)\)" -AllMatches | ForEach-Object { $_.Matches.Groups[-1].Value }
+
+        $CacheFile = Join-Path $CacheDirectory "$id.txt"
 
         # Get the package information from winget
 
