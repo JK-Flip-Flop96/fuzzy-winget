@@ -6,6 +6,26 @@
 # Repository: https://github.com/JK-Flip-Flop96/Fuzzy-Winget
 ##########################################################################################
 
+# Global Variables
+$global:FuzzyWinget = @{ # Create a global variable to store the module's data in
+    CacheDirectory = "$env:tmp\FuzzyPackages" # Set the default cache directory to the temp directory
+}
+
+# Set the module's cache directory to the default if it doesn't exist
+# TODO: This should be moved to the Initialise script
+if (-not (Test-Path $global:FuzzyWinget.CacheDirectory)) {
+    New-Item -ItemType Directory -Path $global:FuzzyWinget.CacheDirectory -Force | Out-Null
+    New-Item -ItemType Directory -Path "$($global:FuzzyWinget.CacheDirectory)\List" -Force | Out-Null
+    New-Item -ItemType Directory -Path "$($global:FuzzyWinget.CacheDirectory)\Preview" -Force | Out-Null
+
+    New-Item -ItemType Directory -Path "$($global:FuzzyWinget.CacheDirectory)\List\winget" -Force | Out-Null
+    New-Item -ItemType Directory -Path "$($global:FuzzyWinget.CacheDirectory)\List\scoop" -Force | Out-Null
+    New-Item -ItemType Directory -Path "$($global:FuzzyWinget.CacheDirectory)\List\choco" -Force | Out-Null
+
+    New-Item -ItemType Directory -Path "$($global:FuzzyWinget.CacheDirectory)\Preview\winget" -Force | Out-Null
+    New-Item -ItemType Directory -Path "$($global:FuzzyWinget.CacheDirectory)\Preview\scoop" -Force | Out-Null
+    New-Item -ItemType Directory -Path "$($global:FuzzyWinget.CacheDirectory)\Preview\choco" -Force | Out-Null
+}
 
 ####################
 # Helper Functions #
@@ -29,15 +49,52 @@ function Invoke-FuzzyPackager {
         [string[]]$Packages
     )
 
+    # --- Setup for fzf ---
+
     # Define the ps executable to use for the preview command, pwsh for core and powershell for desktop
     $PSExecutable = if ($PSVersionTable.PSEdition -eq "Core") { "pwsh" } else { "powershell" } 
 
-    # Format the packages for fzf and pipe them to fzf for selection
-    $selectedPackages = $Packages | Format-Table -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") } |
-        fzf --ansi --reverse --multi --preview "$PSExecutable -noLogo -noProfile -nonInteractive -File `"$PSScriptRoot\Scripts\Preview.ps1`" {}" --preview-window '50%,border-left' --prompt=' >'
+    $WindowTitle = (Get-Culture).TextInfo.ToTitleCase(" $Action Packages ") # Set the title of the fzf window to the action being performed
+    
+    # Set the colour of the tile based on the action being performed
+    $TitleColour = switch ($Action) {
+        "install" { "green" }
+        "uninstall" { "red" }
+        "update" { "yellow" }
+    }
+
+    # --- End of setup for fzf ---
+
+    <# FZF Arguments:
+     --ansi: Enable ANSI color support
+     --multi: Allow multiple selections
+     --cycle: Allow cyclic scrolling through the list
+     --border: Enable a border around the fzf window
+       "bold": Set the border use heavy line drawing characters
+     --border-label: Set the label for the border
+     --border-label-pos: Set the position of the border label
+     --color: Set the color of the border label
+     --preview: Set the command to run for the preview window
+     --preview-window: Set the size and position of the preview window
+     --prompt: Set the prompt for the fzf window #>
+
+    # Call fzf to select the packages to act on
+    $selectedPackages = $Packages |
+        fzf --ansi `
+            --multi `
+            --cycle `
+            --border "bold" `
+            --border-label "$WindowTitle" `
+            --border-label-pos=3 `
+            --color=label:$TitleColour `
+            --preview "$PSExecutable -noLogo -noProfile -nonInteractive -File `"$PSScriptRoot\Scripts\Preview.ps1`" {} `"$($global:FuzzyWinget.CacheDirectory)\Preview`"" `
+            --preview-window '50%,border-left,wrap' `
+            --prompt=' >'
 
     # If the user didn't select anything return
     if(-not $selectedPackages){
+        # Reset the lastexitcode to 0 then return
+        $global:LASTEXITCODE = 0
         return
     }
 
@@ -96,7 +153,6 @@ function Invoke-FuzzyPackager {
                 Write-Host "[$source] Installing $packageTitle"
 
                 if ($source -eq "winget"){
-                    # TODO: Different sources have different ways of installing packages
                     $result = Install-WinGetPackage $id # Cmdlet will report its own progress
 
                     # Add the command to the history file so that the user can easily rerun it - works but requires a restart of the shell to take effect
@@ -156,6 +212,67 @@ function Invoke-FuzzyPackager {
     }
 }
 
+function Update-FuzzyPackageSources{
+    [CmdletBinding()]
+    param(
+        # The sources to update
+        [Parameter()]
+        [ValidateSet("winget", "scoop", "choco")] # Source names must match 
+        [string[]]$Sources=@("winget", "scoop", "choco") # Default to all sources
+    )
+
+    Write-Host "$($PSStyle.Foreground.Blue):: $($PSStyle.Foreground.White)Updating Packages Sources"
+
+    foreach($source in $Sources){
+        Write-Host "   $($PSStyle.Foreground.BrightWhite)Updating $($source)..." -NoNewline
+
+        Invoke-Command $SourceInfo[$source].RefreshCommand
+
+        Write-Host "`b`b`b $($PSStyle.Foreground.BrightWhite)[$($PSStyle.Foreground.Green)OK$($PSStyle.Foreground.BrightWhite)]"
+    }
+
+    Write-Host "" # Newline
+}
+
+function Get-FuzzyPackageList{
+    [CmdletBinding()]
+    param(
+        # The action that will on the selected packages
+        [Parameter(Mandatory=$true)]
+        [scriptblock]$Command,
+
+        # The formatter that will be used to format the packages into strings for fzf
+        [Parameter(Mandatory=$true)]
+        [scriptblock]$Formatter,
+
+        # Path to the cache file
+        [Parameter(Mandatory=$true)]
+        [string]$CacheFile,
+
+        # The maximum age of the cache in minutes
+        [Parameter(Mandatory=$true)]
+        [int]$MaxCacheAge,
+
+        # Argument to pass to the formatter
+        [switch]$isUpdate
+    )
+
+    # Check if the cache exists
+    if(!(Test-Path $CacheFile)){
+        # If it doesn't exist, create it
+        New-Item -ItemType File -Path $CacheFile -Force | Out-Null
+    }
+
+    # Check if the cache is older than the specified max age
+    if ((Get-Date).Subtract((Get-Item $CacheFile).LastWriteTime).TotalMinutes -gt $MaxCacheAge){
+        # Get all packages from WinGet and format them for fzf
+        &$Command | & $Formatter -isUpdate:$isUpdate | Tee-Object -FilePath $CacheFile
+    }else{
+        # If the cache is still valid, use it
+        Get-Content $CacheFile
+    }
+}
+
 #########################
 # User-facing functions #
 #########################
@@ -165,27 +282,38 @@ function Invoke-FuzzyPackageInstall {
     param(
         [Parameter()]
         [ValidateSet("winget", "scoop", "choco")]
-        [string[]]$Sources=@("winget", "scoop", "choco")      
+        [string[]]$Sources=@("winget", "scoop", "choco"),
+
+        [Parameter()]
+        [switch]$UpdateSources,
+
+        # The maximum age of the cache in minutes
+        [Parameter()]
+        [int]$MaxCacheAge = 0
     )
 
-    # TODO: Show a progress bar or spinner while the packages are being fetched, it can take a while
+    if($UpdateSources){
+        # If the user specified the -UpdateSources switch, update the sources
+        Update-FuzzyPackageSources -Sources $Sources
+    }
+
+    $ListDirectory = "$($global:FuzzyWinget.CacheDirectory)\List"
+
+    Write-Host "$($PSStyle.Foreground.Blue):: $($PSStyle.Foreground.White)Getting Available Packages"
 
     # Collect all available packages
     $availablePackages = @()
 
-    if($Sources.Contains("winget")){
-        # Get all packages from WinGet and format them for fzf
-        $availablePackages += Find-WinGetPackage | Format-WingetPackage
-    }
-    
-    if($Sources.Contains("scoop")){
-        # Get all packages from Scoop and format them for fzf
-        $availablePackages += scoop search 6> $null | Format-ScoopPackage
-    }
+    foreach($source in $Sources){
+        Write-Host "   $($PSStyle.Foreground.BrightWhite)Getting $source package list..." -NoNewline
 
-    if($Sources.Contains("choco")){
-        # Get all packages from Chocolatey and format them for fzf
-        $availablePackages += choco search -r | Format-ChocoPackage
+        $availablePackages += Get-FuzzyPackageList `
+            -Command $SourceInfo[$source].InstallQuery `
+            -Formatter $SourceInfo[$source].Formatter `
+            -CacheFile "$($ListDirectory)\$($source)\available.txt" `
+            -MaxCacheAge $MaxCacheAge
+
+        Write-Host "`b`b`b $($PSStyle.Foreground.BrightWhite)[$($PSStyle.Foreground.Green)OK$($PSStyle.Foreground.BrightWhite)]"
     }
 
     # If no packages were found, exit
@@ -203,26 +331,30 @@ function Invoke-FuzzyPackageUninstall {
     param(
         [Parameter()]
         [ValidateSet("winget", "scoop", "choco")]
-        [string[]]$Sources=@("winget", "scoop", "choco")      
+        [string[]]$Sources=@("winget", "scoop", "choco"),
+
+        # The max age of the cache in minutes
+        [Parameter()]
+        [int]$MaxCacheAge = 0
     )
+
+    $ListDirectory = "$($global:FuzzyWinget.CacheDirectory)\List"
+
+    Write-Host "$($PSStyle.Foreground.Blue):: $($PSStyle.Foreground.White)Getting Installed Packages"
 
     # Collect all installed packages
     $installedPackages = @()
 
-    if($Sources.Contains("winget")){
-        # Get all packages from WinGet and format them for fzf
-        $installedPackages += Get-WinGetPackage | Format-WingetPackage
-    }
-        
-    if($Sources.Contains("scoop")){
-        # Get all packages from Scoop and format them for fzf
-        $installedPackages += scoop list 6> $null | Format-ScoopPackage
-    }
+    foreach($source in $Sources){
+        Write-Host "   $($PSStyle.Foreground.BrightWhite)Getting $($source) packages..." -NoNewline
 
-    if($Sources.Contains("choco")){
-        # TODO: Remove the --local-only flag once choco v2.0.0 is released
-        # Get all packages from Chocolatey and format them for fzf
-        $installedPackages += choco list --local-only -r | Format-ChocoPackage
+        $installedPackages += Get-FuzzyPackageList `
+            -Command $SourceInfo[$source].UninstallQuery `
+            -Formatter $SourceInfo[$source].Formatter `
+            -CacheFile "$($ListDirectory)\$($source)\installed.txt" `
+            -MaxCacheAge $MaxCacheAge
+
+        Write-Host "`b`b`b $($PSStyle.Foreground.BrightWhite)[$($PSStyle.Foreground.Green)OK$($PSStyle.Foreground.BrightWhite)]"
     }
     
     # If no packages were found, exit
@@ -238,31 +370,51 @@ function Invoke-FuzzyPackageUninstall {
 function Invoke-FuzzyPackageUpdate {
     [CmdletBinding()]
     param(
+        # The sources to search for updates in
         [Parameter()]
-        [ValidateSet("winget", "scoop", "choco")]
-        [string[]]$Sources=@("winget", "scoop", "choco"),
+        [ValidateSet("winget", "scoop", "choco")] # Source names must match 
+        [string[]]$Sources=@("winget", "scoop", "choco"), # Default to all sources
 
         # Include packages with an unknown version - for winget only
-        [switch]$IncludeUnknown
+        [Parameter()]
+        [switch]$IncludeUnknown,
+
+        # Fetch updates for each source before looking for updates
+        [Parameter()]
+        [switch]$UpdateSources,
+
+        # The maximum age of the cache in minutes
+        [Parameter()]
+        [int]$MaxCacheAge = 0
     )
+
+    if($UpdateSources){
+        # If the user specified the -UpdateSources switch, update the sources
+        Update-FuzzyPackageSources -Sources $Sources
+    }
+
+    # Path to the cache directory
+    $ListDirectory = "$($global:FuzzyWinget.CacheDirectory)\List"
+
+    Write-Host "$($PSStyle.Foreground.Blue):: $($PSStyle.Foreground.White)Querying for Updates"
 
     # Collect all updates
     $updates = @()
 
-    if($Sources.Contains("winget")){
-        # Get all updates available from WinGet and format them for fzf
-        $updates += Get-WinGetPackage | Where-Object {(($_.Version -ne "Unknown") -or $IncludeUnknown) -and $_.IsUpdateAvailable} | Format-WingetPackage -isUpdate
-    }
-    
-    if($Sources.Contains("scoop")){
-        # Get all packages from Scoop and format them for fzf
-        $updates += scoop status 6> $null | Format-ScoopPackage -isUpdate
+    foreach($source in $Sources){
+        Write-Host "   $($PSStyle.Foreground.BrightWhite)Fetching $($source) updates..." -NoNewline
+
+        $updates += Get-FuzzyPackageList `
+            -Command $SourceInfo[$source].UpdateQuery `
+            -Formatter $SourceInfo[$source].Formatter `
+            -CacheFile "$($ListDirectory)\$($source)\updates.txt" `
+            -MaxCacheAge $MaxCacheAge `
+            -isUpdate `
+
+        Write-Host "`b`b`b [$($PSStyle.Foreground.Green)OK$($PSStyle.Foreground.BrightWhite)]"
     }
 
-    if ($Sources.Contains("choco")){
-        # Get all packages from Chocolatey and format them for fzf
-        $updates += choco outdated -r | Format-ChocoPackage -isUpdate
-    }
+    Write-Host "" # Newline
 
     # If there are no updates available, exit
     if($updates.Count -eq 0){
@@ -371,5 +523,102 @@ function Format-ChocoPackage {
 
         # Output the formatted string - these strings are the ones that will scbe displayed in fzf
         "$source `t $name `t $version"
+    }
+}
+
+#######################
+# Source Configuraton #
+#######################
+
+# The following hash table contains the configuration for each package source
+# This section must be run last so that the functions are defined
+
+$SourceInfo = @{
+    winget = @{
+        # Source information
+        Name = "winget"
+
+        # Package queries
+        InstallQuery = { Find-WinGetPackage }
+        UninstallQuery = { Get-WinGetPackage }
+        UpdateQuery = { Get-WinGetPackage | Where-Object {($IncludeUnknown -or ($_.Version -ne "Unknown")) -and $_.IsUpdateAvailable} }
+
+        # Package commands
+        InstallCommand = { Install-WinGetPackage }
+        UninstallCommand = { Uninstall-WinGetPackage }
+        UpdateCommand = { Update-WinGetPackage }
+
+        # Source commands
+        RefreshCommand = { winget source update *> $null }
+
+        # Package formatters
+        Formatter = ${function:Format-WingetPackage}
+
+        Status = {
+            # Check if winget is installed
+            if (Get-Command winget -ErrorAction SilentlyContinue) {
+                return $true
+            } else {
+                return $false
+            }
+        }
+    }
+    scoop = @{
+        # Source information
+        Name = "scoop"
+
+        # Package queries 
+        InstallQuery = { scoop search 6> $null }
+        UninstallQuery = { scoop list 6> $null }
+        UpdateQuery = { scoop status 6> $null }
+
+        # Package commands
+        InstallCommand = { scoop install }
+        UninstallCommand = { scoop uninstall }
+        UpdateCommand = { scoop update }
+
+        # Source commands
+        RefreshCommand = { scoop update *> $null }
+
+        # Package formatters
+        Formatter = ${function:Format-ScoopPackage}
+
+        Status = {
+            # Check if scoop is installed
+            if (Get-Command scoop -ErrorAction SilentlyContinue) {
+                return $true
+            } else {
+                return $false
+            }
+        }
+    }
+    choco = @{
+        # Source information
+        Name = "choco"
+
+        # Package queries
+        InstallQuery = { choco search -r }
+        UninstallQuery = { choco list --local-only -r }
+        UpdateQuery = { choco outdated -r }
+
+        # Package commands
+        InstallCommand = { choco install }
+        UninstallCommand = { choco uninstall }
+        UpdateCommand = { choco upgrade }
+
+        # Source commands
+        RefreshCommand = { } # Choco doesn't have a refresh command
+
+        # Package formatters
+        Formatter = ${function:Format-ChocoPackage}
+
+        Status = {
+            # Check if choco is installed
+            if (Get-Command choco -ErrorAction SilentlyContinue) {
+                return $true
+            } else {
+                return $false
+            }
+        }
     }
 }
