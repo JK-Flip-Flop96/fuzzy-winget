@@ -49,7 +49,7 @@ if ($source.StartsWith("wg:")) {
     $CacheDirectory = Join-Path $CacheDirectory "scoop"
 
     # Get the name of the package from the selected line, scoop does not have package ids
-    $id = Select-String -InputObject $selection -Pattern "\s([\w\-]+)" | ForEach-Object { $_.Matches.Groups[1].Value }
+    $id = Select-String -InputObject $selection -Pattern "\s([\w\-.]+)" | ForEach-Object { $_.Matches.Groups[1].Value }
 
     $CacheFile = Join-Path $CacheDirectory "$id.txt"
 
@@ -83,6 +83,27 @@ if ($source.StartsWith("wg:")) {
     # Remove the "[x] packages found." message
     $info -replace "[0-9]+ packages found.$", ""
 
+} elseif ($source.StartsWith("ps:")){
+    $CacheDirectory = Join-Path $CacheDirectory "psget"
+
+    # Get the name of the package from the selected line, psget does not have package ids
+    $id = Select-String -InputObject $selection -Pattern "\s([\w\-.]+)" | ForEach-Object { $_.Matches.Groups[1].Value }
+
+    $CacheFile = Join-Path $CacheDirectory "$id.txt"
+
+    # If the cache file does not exist then create it
+    if (!(Test-Path $CacheFile)) {
+        New-Item -ItemType File -Path $CacheFile -Force | Out-Null
+    }
+
+    # Check if the cache file is older than 1 day or if it is empty
+    if ((Get-Date).Subtract((Get-Item $CacheFile).LastWriteTime).Days -ge 1 -or (Get-Content $CacheFile).Count -eq 0) {
+        # If it is then update the cache file
+        Find-Module $id | Format-List | Tee-Object $CacheFile
+    }else{
+        # If it is not then read the cache file
+        $($(Get-Content $CacheFile) -split "`n" | ForEach-Object { $_ -replace '^([^:]*:)', "$($PSStyle.Foreground.Green)`$1$($PSStyle.Foreground.White)" }) -join "`n"
+    }
 } else {
     # If we somehow get here then the source is not known
     "$($PSStyle.Foreground.Yellow)Cannot get package information for this source."

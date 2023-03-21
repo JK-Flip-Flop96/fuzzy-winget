@@ -15,16 +15,6 @@ $global:FuzzyWinget = @{ # Create a global variable to store the module's data i
 # TODO: This should be moved to the Initialise script
 if (-not (Test-Path $global:FuzzyWinget.CacheDirectory)) {
     New-Item -ItemType Directory -Path $global:FuzzyWinget.CacheDirectory -Force | Out-Null
-    New-Item -ItemType Directory -Path "$($global:FuzzyWinget.CacheDirectory)\List" -Force | Out-Null
-    New-Item -ItemType Directory -Path "$($global:FuzzyWinget.CacheDirectory)\Preview" -Force | Out-Null
-
-    New-Item -ItemType Directory -Path "$($global:FuzzyWinget.CacheDirectory)\List\winget" -Force | Out-Null
-    New-Item -ItemType Directory -Path "$($global:FuzzyWinget.CacheDirectory)\List\scoop" -Force | Out-Null
-    New-Item -ItemType Directory -Path "$($global:FuzzyWinget.CacheDirectory)\List\choco" -Force | Out-Null
-
-    New-Item -ItemType Directory -Path "$($global:FuzzyWinget.CacheDirectory)\Preview\winget" -Force | Out-Null
-    New-Item -ItemType Directory -Path "$($global:FuzzyWinget.CacheDirectory)\Preview\scoop" -Force | Out-Null
-    New-Item -ItemType Directory -Path "$($global:FuzzyWinget.CacheDirectory)\Preview\choco" -Force | Out-Null
 }
 
 ####################
@@ -42,7 +32,7 @@ function Invoke-FuzzyPackager {
         [string]$Action,
 
         [Parameter(Mandatory=$true)]
-        [ValidateSet("winget", "scoop", "choco")] # Confirms that the source is one of the supported sources
+        [ValidateSet("winget", "scoop", "choco", "psget")] # Confirms that the source is one of the supported sources
         [string[]]$Sources, 
 
         [Parameter(Mandatory=$true, ValueFromPipeline=$true)] # Confirms that there is at least one package to act on
@@ -217,8 +207,8 @@ function Update-FuzzyPackageSources{
     param(
         # The sources to update
         [Parameter()]
-        [ValidateSet("winget", "scoop", "choco")] # Source names must match 
-        [string[]]$Sources=@("winget", "scoop", "choco") # Default to all sources
+        [ValidateSet("winget", "scoop", "choco", "psget")] # Source names must match 
+        [string[]]$Sources=@("winget", "scoop", "choco", "psget") # Default to all sources
     )
 
     Write-Host "$($PSStyle.Foreground.Blue):: $($PSStyle.Foreground.White)Updating Packages Sources"
@@ -281,8 +271,8 @@ function Invoke-FuzzyPackageInstall {
     [CmdletBinding()]
     param(
         [Parameter()]
-        [ValidateSet("winget", "scoop", "choco")]
-        [string[]]$Sources=@("winget", "scoop", "choco"),
+        [ValidateSet("winget", "scoop", "choco", "psget")]
+        [string[]]$Sources=@("winget", "scoop", "choco", "psget"),
 
         [Parameter()]
         [switch]$UpdateSources,
@@ -330,8 +320,8 @@ function Invoke-FuzzyPackageUninstall {
     [CmdletBinding()]
     param(
         [Parameter()]
-        [ValidateSet("winget", "scoop", "choco")]
-        [string[]]$Sources=@("winget", "scoop", "choco"),
+        [ValidateSet("winget", "scoop", "choco", "psget")]
+        [string[]]$Sources=@("winget", "scoop", "choco", "psget"),
 
         # The max age of the cache in minutes
         [Parameter()]
@@ -511,7 +501,7 @@ function Format-ChocoPackage {
         $PackageDetails = $Package -split '\|'
 
         $name = "$($PSStyle.Foreground.White)$($PackageDetails[0])"
-        $source = "$($PSStyle.Foreground.Blue)ch:choco" # Choco doesn't report the source so just use choco
+        $source = "$($PSStyle.Foreground.Yellow)ch:choco" # Choco doesn't report the source so just use choco
 
         if ($isUpdate){
             # For packages with updates, show the version change that will occur - e.g. 1.0.0 -> 1.0.1
@@ -522,6 +512,28 @@ function Format-ChocoPackage {
         }
 
         # Output the formatted string - these strings are the ones that will scbe displayed in fzf
+        "$source `t $name `t $version"
+    }
+}
+
+function Format-PSGetPackage {
+    [CmdletBinding()]
+    param(
+        [Parameter(ValueFromPipeline)]
+        [object]$Package,
+
+        [switch]$isUpdate
+    )
+
+    process {
+        $source = "$($PSStyle.Foreground.Blue)ps:$($Package.Repository)" # e.g. ps:PSGallery
+        
+        $name = "$($PSStyle.Foreground.White)$($Package.Name)"
+
+        # For packages without updates, show the current version - e.g. 1.0.0
+        $version = "$($PSStyle.Foreground.Green)$($Package.Version)"
+
+        # Output the formatted string - these strings are the ones that will be displayed in fzf
         "$source `t $name `t $version"
     }
 }
@@ -619,6 +631,31 @@ $SourceInfo = @{
             } else {
                 return $false
             }
+        }
+    }
+    psget = @{
+        # Source information
+        Name = "psget"
+
+        # Package queries
+        InstallQuery = { Find-Module }
+        UninstallQuery = { Get-InstalledModule }
+        UpdateQuery = { } # PSGet doesn't have an update query
+        # TODO: Make a custom update query maybe check the version of the installed module and the latest version on the gallery? 
+
+        # Package commands
+        InstallCommand = { Install-Module }
+        UninstallCommand = { Uninstall-Module }
+        UpdateCommand = { Update-Module } # This is redundant until I can jerry-rig an update query
+
+        # Source commands
+        RefreshCommand = { } # PSGet doesn't have a refresh command
+
+        # Package formatters
+        Formatter = ${function:Format-PSGetPackage}
+
+        Status = {
+            # TODO: Check if PSGet is installed
         }
     }
 }
