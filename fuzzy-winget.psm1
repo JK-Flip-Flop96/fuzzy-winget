@@ -12,6 +12,7 @@ $global:FuzzyWinget = @{ # Create a global variable to store the module's data i
 }
 
 # Set the module's cache directory to the default if it doesn't exist
+# TODO: This should be moved to the Initialise script
 if (-not (Test-Path $global:FuzzyWinget.CacheDirectory)) {
     New-Item -ItemType Directory -Path $global:FuzzyWinget.CacheDirectory -Force | Out-Null
     New-Item -ItemType Directory -Path "$($global:FuzzyWinget.CacheDirectory)\List" -Force | Out-Null
