@@ -109,7 +109,7 @@ function Invoke-FuzzyPackager {
         if ($source -eq "winget"){
             $name = $package | Select-String -Pattern "\s(.*) \(" -AllMatches | ForEach-Object { $_.Matches.Groups[-1].Value } # All text between the first space and the last opening bracket
             $id = $package | Select-String -Pattern "\((.*?)\)" -AllMatches | ForEach-Object { $_.Matches.Groups[-1].Value } # All text between the last opening bracket and the last closing bracket
-        } elseif ($source -eq "scoop" -or $source -eq "choco") {
+        } elseif ($source -eq "scoop" -or $source -eq "choco" -or $source -eq "psget") {
             # Get the name of the package from the selected line, scoop and choco don't have package ids
             $id = $($package -split "\s+")[1] # Scoop packages never have spaces in their names so this should always work
             $name = $id
