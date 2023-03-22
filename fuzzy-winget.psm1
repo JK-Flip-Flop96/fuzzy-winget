@@ -44,14 +44,14 @@ function Invoke-FuzzyPackager {
     # Define the ps executable to use for the preview command, pwsh for core and powershell for desktop
     $PSExecutable = if ($PSVersionTable.PSEdition -eq "Core") { "pwsh" } else { "powershell" } 
 
-    $WindowTitle = (Get-Culture).TextInfo.ToTitleCase(" $Action Packages ") # Set the title of the fzf window to the action being performed
+    $WindowTitle = "$(switch ($Action) {
+        "install" { $PSStyle.Foreground.Green }
+        "uninstall" { $PSStyle.Foreground.Red }
+        "update" { $PSStyle.Foreground.Yellow }
+    })$((Get-Culture).TextInfo.ToTitleCase("$Action Packages"))" # Set the title of the fzf window to the action being performed
     
     # Set the colour of the tile based on the action being performed
-    $TitleColour = switch ($Action) {
-        "install" { "green" }
-        "uninstall" { "red" }
-        "update" { "yellow" }
-    }
+    
 
     # --- End of setup for fzf ---
 
@@ -73,13 +73,19 @@ function Invoke-FuzzyPackager {
         fzf --ansi `
             --multi `
             --cycle `
+            --layout=reverse `
             --border "bold" `
-            --border-label "$WindowTitle" `
+            --border-label " $WindowTitle " `
             --border-label-pos=3 `
-            --color=label:$TitleColour `
+            --margin=0 `
             --preview "$PSExecutable -noLogo -noProfile -nonInteractive -File `"$PSScriptRoot\Scripts\Preview.ps1`" {} `"$($global:FuzzyWinget.CacheDirectory)\Preview`"" `
-            --preview-window '50%,border-left,wrap' `
-            --prompt=' >'
+            --preview-window '40%,border-sharp,wrap' `
+            --preview-label "$($PSStyle.Foreground.Magenta)Package Information" `
+            --prompt=' >' `
+            --scrollbar="▐" `
+            --separator="━" `
+            --tabstop=4 `
+            --tiebreak=index `
 
     # If the user didn't select anything return
     if(-not $selectedPackages){
@@ -94,17 +100,16 @@ function Invoke-FuzzyPackager {
         # Extract the pertinent information from the selected package
         $source = $package | Select-String -Pattern "^([\w\-:]+)" | ForEach-Object { $_.Matches.Groups[1].Value } # All text before the first space
 
-        if ($source.StartsWith("wg:")) { # If the source is a winget source
-            $source = "winget" # Set the source to winget
-        } elseif ($source.StartsWith("sc:")) { # If the source is a scoop bucket
-            $source = "scoop" # Set the source to scoop
-        } elseif ($source.StartsWith("ch:")) { # If the source is a chocolatey source
-            $source = "choco" # Set the source to choco
-        } elseif ($source.StartsWith("ps:")) { # If the source is a psget source
-            $source = "psget" # Set the source to psget
-        } else {
-            Write-Host "Unknown source." -ForegroundColor Red # This should never happen, but just in case
+        # Check which source from the sourceInfo variable the package is from
+        foreach ($entry in $SourceInfo.keys) {
+            if ($source.StartsWith($SourceInfo[$entry].ShortName)) {
+                $source = $SourceInfo[$entry].Name # Set the source to the full name of the source
+                break
+            }
         }
+
+        # NOTE: All of the above has been refactored to use the SourceInfo variable
+        # TODO: Refactor the below to use the SourceInfo variable
 
         if ($source -eq "winget"){
             $name = $package | Select-String -Pattern "\s(.*) \(" -AllMatches | ForEach-Object { $_.Matches.Groups[-1].Value } # All text between the first space and the last opening bracket
@@ -255,8 +260,8 @@ function Get-FuzzyPackageList{
         New-Item -ItemType File -Path $CacheFile -Force | Out-Null
     }
 
-    # Check if the cache is older than the specified max age
-    if ((Get-Date).Subtract((Get-Item $CacheFile).LastWriteTime).TotalMinutes -gt $MaxCacheAge){
+    # Check if the cache is older than the specified max age or if it's empty
+    if ((Get-Date).Subtract((Get-Item $CacheFile).LastWriteTime).TotalMinutes -gt $MaxCacheAge -or (Get-Content $CacheFile).Count -eq 0){
         # Get all packages from WinGet and format them for fzf
         &$Command | & $Formatter -isUpdate:$isUpdate | Tee-Object -FilePath $CacheFile
     }else{
@@ -418,6 +423,78 @@ function Invoke-FuzzyPackageUpdate {
     Invoke-FuzzyPackager -Action update -Packages $updates -Sources $Sources
 }
 
+function Clear-FuzzyPackagesCache {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [ValidateSet("winget", "scoop", "choco", "psget")]
+        [string[]]$Sources=@("winget", "scoop", "choco", "psget"),
+
+        [switch]$Preview,
+
+        [switch]$List
+    )
+
+    if ($List){
+        Clear-FuzzyPackagesListCache -Sources $Sources
+    }
+
+    if ($Preview){
+        Clear-FuzzyPackagesPreviewCache -Sources $Sources
+    }
+
+    # If neither -List or -Preview were specified, clear both caches. The case where both are specified is handled by the individual cases above
+    if (-not $List -and -not $Preview){
+        Clear-FuzzyPackagesListCache -Sources $Sources
+        Write-Host "" # Newline between the two caches
+        Clear-FuzzyPackagesPreviewCache -Sources $Sources
+    }
+}
+
+function Clear-FuzzyPackagesListCache {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [ValidateSet("winget", "scoop", "choco", "psget")]
+        [string[]]$Sources=@("winget", "scoop", "choco", "psget")
+    )
+
+    Write-Host "$($PSStyle.Foreground.Blue):: $($PSStyle.Foreground.White)Clearing Package List Cache"
+
+    $ListDirectory = "$($global:FuzzyWinget.CacheDirectory)\List"
+
+    foreach($source in $Sources){
+        Write-Host "   $($PSStyle.Foreground.BrightWhite)Clearing $($source) cache..." -NoNewline
+
+        # Remove the cache directory
+        Remove-Item -Path "$($ListDirectory)\$($source)\*" -Recurse -Force -ErrorAction SilentlyContinue
+
+        Write-Host "`b`b`b $($PSStyle.Foreground.BrightWhite)[$($PSStyle.Foreground.Green)Cleared$($PSStyle.Foreground.BrightWhite)]"
+    }
+}
+
+function Clear-FuzzyPackagesPreviewCache {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [ValidateSet("winget", "scoop", "choco", "psget")]
+        [string[]]$Sources=@("winget", "scoop", "choco", "psget")
+    )
+
+    Write-Host "$($PSStyle.Foreground.Blue):: $($PSStyle.Foreground.White)Clearing Package Preview Cache"
+
+    $PreviewDirectory = "$($global:FuzzyWinget.CacheDirectory)\Preview"
+
+    foreach($source in $Sources){
+        Write-Host "   $($PSStyle.Foreground.BrightWhite)Clearing $($source) cache..." -NoNewline
+
+        # Remove the cache directory
+        Remove-Item -Path "$($PreviewDirectory)\$($source)\*" -Recurse -Force -ErrorAction SilentlyContinue
+
+        Write-Host "`b`b`b $($PSStyle.Foreground.BrightWhite)[$($PSStyle.Foreground.Green)Cleared$($PSStyle.Foreground.BrightWhite)]"
+    }
+}
+
 ####################
 # Format Functions #
 ####################
@@ -570,13 +647,18 @@ $SourceInfo = @{
         # Package formatters
         Formatter = ${function:Format-WingetPackage}
 
-        Status = {
+        InstallStatus = {
             # Check if winget is installed
             if (Get-Command winget -ErrorAction SilentlyContinue) {
                 return $true
             } else {
                 return $false
             }
+        }
+
+        ResultCheck = {
+            # Check if the winget command was successful
+            $_.status -eq "Ok"
         }
     }
     scoop = @{
@@ -601,13 +683,18 @@ $SourceInfo = @{
         # Package formatters
         Formatter = ${function:Format-ScoopPackage}
 
-        Status = {
+        InstallStatus = {
             # Check if scoop is installed
             if (Get-Command scoop -ErrorAction SilentlyContinue) {
                 return $true
             } else {
                 return $false
             }
+        }
+
+        ResultCheck = {
+            # Check if the scoop command was successful
+            $? -eq $true
         }
     }
     choco = @{
@@ -632,13 +719,21 @@ $SourceInfo = @{
         # Package formatters
         Formatter = ${function:Format-ChocoPackage}
 
-        Status = {
+        InstallStatus = {
             # Check if choco is installed
             if (Get-Command choco -ErrorAction SilentlyContinue) {
                 return $true
             } else {
                 return $false
             }
+        }
+
+        ResultCheck = {
+            # Check if the choco command was successful
+            # 0 is returned when the command is successful
+            # 1641 is returned when a reboot is initiated
+            # 3010 is returned when a reboot is required
+            $LASTEXITCODE -eq 0 -or $LASTEXITCODE -eq 1641 -or $LASTEXITCODE -eq 3010
         }
     }
     psget = @{
@@ -664,8 +759,12 @@ $SourceInfo = @{
         # Package formatters
         Formatter = ${function:Format-PSGetPackage}
 
-        Status = {
+        InstallStatus = {
             # TODO: Check if PSGet is installed
+        }
+
+        ResultCheck = {
+            $? -eq $true
         }
     }
 }
