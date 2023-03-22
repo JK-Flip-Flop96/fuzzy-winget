@@ -137,6 +137,7 @@ if ($source.StartsWith("wg:")) {
     # Check if the cache file is older than 1 day or if it is empty
     if ((Get-Date).Subtract((Get-Item $CacheFile).LastWriteTime).TotalDays -ge 1 -or (Get-Content $CacheFile).Count -eq 0) {
         # If it is then update the cache file
+        # TODO: Append the data contained in the "AdditionalMetadata" property to the output and hide empty fields
         Find-Module $id | Format-List | Tee-Object $CacheFile
     }else{
         # If it is not then read the cache file
