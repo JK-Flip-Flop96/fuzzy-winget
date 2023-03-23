@@ -435,63 +435,49 @@ function Clear-FuzzyPackagesCache {
         [switch]$List
     )
 
-    if ($List){
-        Clear-FuzzyPackagesListCache -Sources $Sources
-    }
-
-    if ($Preview){
-        Clear-FuzzyPackagesPreviewCache -Sources $Sources
-    }
-
-    # If neither -List or -Preview were specified, clear both caches. The case where both are specified is handled by the individual cases above
+    # If neither -List or -Preview were specified, clear both caches. The case where both are specified is handled by the individual cases below
     if (-not $List -and -not $Preview){
-        Clear-FuzzyPackagesListCache -Sources $Sources
-        Write-Host "" # Newline between the two caches
-        Clear-FuzzyPackagesPreviewCache -Sources $Sources
+        Clear-FuzzyPackagesCacheFolder -Sources $Sources -Types "Preview", "List"
+
+        return # Exit the function
+    }
+    
+    if ($Preview){
+        Clear-FuzzyPackagesCacheFolder -Sources $Sources -Types "Preview"
+    }
+
+    if ($List){
+        Clear-FuzzyPackagesCacheFolder -Sources $Sources -Types "List"
     }
 }
 
-function Clear-FuzzyPackagesListCache {
+function Clear-FuzzyPackagesCacheFolder {
     [CmdletBinding()]
     param(
         [Parameter()]
         [ValidateSet("winget", "scoop", "choco", "psget")]
-        [string[]]$Sources=@("winget", "scoop", "choco", "psget")
-    )
+        [string[]]$Sources=@("winget", "scoop", "choco", "psget"),
 
-    Write-Host "$($PSStyle.Foreground.Blue):: $($PSStyle.Foreground.White)Clearing Package List Cache"
-
-    $ListDirectory = "$($global:FuzzyWinget.CacheDirectory)\List"
-
-    foreach($source in $Sources){
-        Write-Host "   $($PSStyle.Foreground.BrightWhite)Clearing $($source) cache..." -NoNewline
-
-        # Remove the cache directory
-        Remove-Item -Path "$($ListDirectory)\$($source)\*" -Recurse -Force -ErrorAction SilentlyContinue
-
-        Write-Host "`b`b`b $($PSStyle.Foreground.BrightWhite)[$($PSStyle.Foreground.Green)Cleared$($PSStyle.Foreground.BrightWhite)]"
-    }
-}
-
-function Clear-FuzzyPackagesPreviewCache {
-    [CmdletBinding()]
-    param(
         [Parameter()]
-        [ValidateSet("winget", "scoop", "choco", "psget")]
-        [string[]]$Sources=@("winget", "scoop", "choco", "psget")
+        [ValidateSet("Preview", "List")]
+        [string[]]$Types=@("Preview", "List")
     )
 
-    Write-Host "$($PSStyle.Foreground.Blue):: $($PSStyle.Foreground.White)Clearing Package Preview Cache"
+    foreach($Type in $Types){
+        Write-Host "" # Newline
 
-    $PreviewDirectory = "$($global:FuzzyWinget.CacheDirectory)\Preview"
+        Write-Host "$($PSStyle.Foreground.Blue):: $($PSStyle.Foreground.White)Clearing Package $Type Cache"
 
-    foreach($source in $Sources){
-        Write-Host "   $($PSStyle.Foreground.BrightWhite)Clearing $($source) cache..." -NoNewline
+        $ListDirectory = "$($global:FuzzyWinget.CacheDirectory)\$Type"
 
-        # Remove the cache directory
-        Remove-Item -Path "$($PreviewDirectory)\$($source)\*" -Recurse -Force -ErrorAction SilentlyContinue
+        foreach($source in $Sources){
+            Write-Host "   $($PSStyle.Foreground.BrightWhite)Clearing $($source) cache..." -NoNewline
 
-        Write-Host "`b`b`b $($PSStyle.Foreground.BrightWhite)[$($PSStyle.Foreground.Green)Cleared$($PSStyle.Foreground.BrightWhite)]"
+            # Remove the cache directory
+            Remove-Item -Path "$($ListDirectory)\$($source)\*" -Recurse -Force -ErrorAction SilentlyContinue
+
+            Write-Host "`b`b`b $($PSStyle.Foreground.BrightWhite)[$($PSStyle.Foreground.Green)Cleared$($PSStyle.Foreground.BrightWhite)]"
+        }
     }
 }
 
