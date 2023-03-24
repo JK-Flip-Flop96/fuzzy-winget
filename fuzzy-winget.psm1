@@ -438,7 +438,7 @@ function Invoke-FuzzyPackageUpdate {
             -MaxCacheAge $MaxCacheAge `
             -isUpdate `
 
-        Write-Host "`b`b`b [$($PSStyle.Foreground.Green)OK$($PSStyle.Foreground.BrightWhite)]"
+        Write-Host "`b`b`b $($PSStyle.Foreground.BrightWhite)[$($PSStyle.Foreground.Green)OK$($PSStyle.Foreground.BrightWhite)]"
     }
 
     Write-Host "" # Newline
