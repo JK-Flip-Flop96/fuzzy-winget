@@ -7,8 +7,18 @@
 ##########################################################################################
 
 # Global Variables
-$global:FuzzyWinget = @{ # Create a global variable to store the module's data in
-    CacheDirectory = "$env:tmp\FuzzyPackages" # Set the default cache directory to the temp directory
+# Settings for the module
+# TODO: Function to set these variables, like Set-PSReadLineOption
+$global:FuzzyWinget = @{
+    # Directory to store the cache files in
+    CacheDirectory = "$env:tmp\FuzzyPackages" 
+
+    # All of the sources that can be used
+    # Will be populated by the keys of the SourceInfo variable
+    Sources = @()
+
+    # The default sources to use when no sources are specified
+    ActiveSources = @("winget", "scoop", "choco", "psget")
 }
 
 # Set the module's cache directory to the default if it doesn't exist
@@ -215,8 +225,13 @@ function Update-FuzzyPackageSources{
         # The sources to update
         [Parameter()]
         [ValidateSet("winget", "scoop", "choco", "psget")] # Source names must match 
-        [string[]]$Sources=@("winget", "scoop", "choco", "psget") # Default to all sources
+        [string[]]$Sources
     )
+
+    # If no sources are specified update all active sources
+    if(-not $Sources){
+        $Sources = $global:FuzzyWinget.ActiveSources
+    }
 
     Write-Host "$($PSStyle.Foreground.Blue):: $($PSStyle.Foreground.White)Updating Packages Sources"
 
@@ -234,7 +249,7 @@ function Update-FuzzyPackageSources{
 function Get-FuzzyPackageList{
     [CmdletBinding()]
     param(
-        # The action that will on the selected packages
+        # The command that will be used to get the packages
         [Parameter(Mandatory=$true)]
         [scriptblock]$Command,
 
@@ -279,7 +294,7 @@ function Invoke-FuzzyPackageInstall {
     param(
         [Parameter()]
         [ValidateSet("winget", "scoop", "choco", "psget")]
-        [string[]]$Sources=@("winget", "scoop", "choco", "psget"),
+        [string[]]$Sources,
 
         [Parameter()]
         [switch]$UpdateSources,
@@ -288,6 +303,11 @@ function Invoke-FuzzyPackageInstall {
         [Parameter()]
         [int]$MaxCacheAge = 0
     )
+
+    # If no sources are specified update all active sources
+    if(-not $Sources){
+        $Sources = $global:FuzzyWinget.ActiveSources
+    }
 
     if($UpdateSources){
         # If the user specified the -UpdateSources switch, update the sources
@@ -328,12 +348,17 @@ function Invoke-FuzzyPackageUninstall {
     param(
         [Parameter()]
         [ValidateSet("winget", "scoop", "choco", "psget")]
-        [string[]]$Sources=@("winget", "scoop", "choco", "psget"),
+        [string[]]$Sources,
 
         # The max age of the cache in minutes
         [Parameter()]
         [int]$MaxCacheAge = 0
     )
+
+    # If no sources are specified, use all active sources
+    if(-not $Sources){
+        $Sources = $global:FuzzyWinget.ActiveSources
+    }
 
     $ListDirectory = "$($global:FuzzyWinget.CacheDirectory)\List"
 
@@ -369,8 +394,8 @@ function Invoke-FuzzyPackageUpdate {
     param(
         # The sources to search for updates in
         [Parameter()]
-        [ValidateSet("winget", "scoop", "choco")] # Source names must match 
-        [string[]]$Sources=@("winget", "scoop", "choco"), # Default to all sources
+        [ValidateSet("winget", "scoop", "choco", "psget")] # Source names must match 
+        [string[]]$Sources, # Default to all sources
 
         # Include packages with an unknown version - for winget only
         [Parameter()]
@@ -384,6 +409,11 @@ function Invoke-FuzzyPackageUpdate {
         [Parameter()]
         [int]$MaxCacheAge = 0
     )
+
+    if ($Sources.Count -eq 0){
+        # If no sources were specified get updates from all sources
+        $Sources = $global:FuzzyWinget.ActiveSources
+    }
 
     if($UpdateSources){
         # If the user specified the -UpdateSources switch, update the sources
@@ -428,12 +458,17 @@ function Clear-FuzzyPackagesCache {
     param(
         [Parameter()]
         [ValidateSet("winget", "scoop", "choco", "psget")]
-        [string[]]$Sources=@("winget", "scoop", "choco", "psget"),
+        [string[]]$Sources,
 
         [switch]$Preview,
 
         [switch]$List
     )
+
+    if ($Sources.Count -eq 0){
+        # If no sources were specified, clear the cache for all active sources
+        $Sources = $global:FuzzyWinget.ActiveSources
+    }
 
     # If neither -List or -Preview were specified, clear both caches. The case where both are specified is handled by the individual cases below
     if (-not $List -and -not $Preview){
@@ -456,27 +491,55 @@ function Clear-FuzzyPackagesCacheFolder {
     param(
         [Parameter()]
         [ValidateSet("winget", "scoop", "choco", "psget")]
-        [string[]]$Sources=@("winget", "scoop", "choco", "psget"),
+        [string[]]$Sources,
 
         [Parameter()]
         [ValidateSet("Preview", "List")]
         [string[]]$Types=@("Preview", "List")
     )
 
+    if ($Sources.Count -eq 0){
+        # If no sources were specified, clear the cache for all active sources
+        $Sources = $global:FuzzyWinget.ActiveSources
+    }
+
     foreach($Type in $Types){
         Write-Host "" # Newline
 
+        # Print the type of cache being cleared
         Write-Host "$($PSStyle.Foreground.Blue):: $($PSStyle.Foreground.White)Clearing Package $Type Cache"
 
+        # Path to the cache directory
         $ListDirectory = "$($global:FuzzyWinget.CacheDirectory)\$Type"
 
+        $ErrorOccured = $false
+
+        # Clear the cache for each source specified
         foreach($source in $Sources){
             Write-Host "   $($PSStyle.Foreground.BrightWhite)Clearing $($source) cache..." -NoNewline
 
-            # Remove the cache directory
-            Remove-Item -Path "$($ListDirectory)\$($source)\*" -Recurse -Force -ErrorAction SilentlyContinue
+            try {
+                # Remove the cache directory
+                Remove-Item -Path "$($ListDirectory)\$($source)\*" -Recurse -Force
 
-            Write-Host "`b`b`b $($PSStyle.Foreground.BrightWhite)[$($PSStyle.Foreground.Green)Cleared$($PSStyle.Foreground.BrightWhite)]"
+                # Report that the cache was cleared
+                Write-Host "`b`b`b $($PSStyle.Foreground.BrightWhite)[$($PSStyle.Foreground.Green)Cleared$($PSStyle.Foreground.BrightWhite)]"
+            }catch{
+                # Report that the cache could not be cleared
+                Write-Host "`b`b`b $($PSStyle.Foreground.BrightWhite)[$($PSStyle.Foreground.Red)Failed$($PSStyle.Foreground.BrightWhite)]"
+
+                $ErrorOccured = $true
+            }
+        }
+
+        if($ErrorOccured){
+            Write-Host "" # Newline
+
+            # Report that an error occured
+            Write-Host "An error occured while clearing the cache" -ForegroundColor Red
+            Write-Host "Perhaps you don't have permission to delete the cache files?" -ForegroundColor Red
+
+            # TODO: This should be more specific, e.g. "You don't have permission to delete the cache files for the following sources: winget, scoop"
         }
     }
 }
@@ -754,3 +817,10 @@ $SourceInfo = @{
         }
     }
 }
+
+###################
+# Final Setup     #
+###################
+
+# Add the source information to the global variable
+$global:FuzzyWinget.Sources = @($SourceInfo.Keys)
