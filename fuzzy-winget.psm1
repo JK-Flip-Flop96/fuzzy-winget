@@ -1,10 +1,73 @@
 # *** FuzzyWinget ***
 # Author: Stuart Miller
-# Version: 0.1.0
+# Version: 0.2.0
 # Description: A module of functions to interact with WinGet using fzf
 # License: MIT
 # Repository: https://github.com/JK-Flip-Flop96/Fuzzy-Winget
 ##########################################################################################
+
+####################
+# Class Definition #
+####################
+
+# Class to store information about a source
+# Default examples are defined for winget, scoop, choco and psget at the bottom of this file
+class FuzzySource {
+
+    # Source information
+    [string]$Name # The name of the source
+    [string]$ShortName # The short name of the source
+    [string]$DisplayName # The full name of the source
+    [string]$Color # The color of the source, ANSI escape codes
+
+    # Queries 
+    [scriptblock]$AvailableQuery # The query to run to get the available packages
+    [scriptblock]$InstalledQuery # The query to run to get the installed packages
+    [scriptblock]$UpdateQuery # The query to run to get the packages that can be updated
+
+    # Actions
+    [scriptblock]$InstallCommand # The command to run to install a package
+    [scriptblock]$UninstallCommand # The command to run to uninstall a package
+    [scriptblock]$UpdateCommand # The command to run to update a package
+
+    # Misc
+    [scriptblock]$RefreshCommand # The command to run to refresh the source
+    [scriptblock]$CheckStatus # The command to run to check if the source is installed and working
+    [scriptblock]$Formatter # The command to run to format the output of the query
+    [scriptblock]$ResultCheck # Scriptblock to check if the result of an action
+}
+
+# Class to stort information about a package
+class FuzzyPackage {
+    [string]$Name # The name of the package
+    [string]$Id # The ID of the package (if applicable)
+    [string]$Version # The version of the package
+    [string]$AvailableVersion # The latest available version of the package (if applicable)
+    [FuzzySource]$Source # The source of the package
+    [string]$Repo # The repository of the package
+
+    # Convert the FuzzyPackage to a string for display in fzf
+    # Format: <Source> <Name> (<ID>) <Version> -> <AvailableVersion>
+    [string]ToString() {
+        return "$($this.Source.Color)$($this.Source.ShortName):$($this.Repo)$($global:PSStyle.Reset)`t" + 
+        "$($this.Name)" + 
+        "$(if ($this.ID) { " ($($global:PSStyle.Foreground.Yellow)$($this.ID)$($global:PSStyle.Reset))" })`t" + 
+        "$(if ($this.AvailableVersion) {
+                "$($global:PSStyle.Foreground.Red)$($this.Version)$($global:PSStyle.Foreground.Cyan) -> " + 
+                "$($global:PSStyle.Foreground.Green)$($this.AvailableVersion)$($global:PSStyle.Reset)" } 
+            else { 
+                "$($global:PSStyle.Foreground.Green)$($this.Version)$($global:PSStyle.Reset)" 
+            })"
+    }
+
+    # A string to represent the package in the install/uninstall/update steps
+    [string]Title(){
+        return "$($this.Name)" + 
+        "$(if ($this.ID) { " ($($global:PSStyle.Foreground.Yellow)$($this.ID)$($global:PSStyle.Reset))" })"
+    }
+}
+
+
 
 # Global Variables
 # Settings for the module
@@ -45,8 +108,10 @@ function Invoke-FuzzyPackager {
         [ValidateSet("winget", "scoop", "choco", "psget")] # Confirms that the source is one of the supported sources
         [string[]]$Sources, 
 
+        [switch]$Confirm, # If the user should be prompted to confirm the action
+
         [Parameter(Mandatory=$true, ValueFromPipeline=$true)] # Confirms that there is at least one package to act on
-        [string[]]$Packages
+        [FuzzyPackage[]]$Packages
     )
 
     # --- Setup for fzf ---
@@ -79,8 +144,14 @@ function Invoke-FuzzyPackager {
      --prompt: Set the prompt for the fzf window #>
 
     # Call fzf to select the packages to act on
-    $selectedPackages = $Packages |
-        fzf --ansi `
+    # Call ToString on each package to get the string representation of the package used for display in fzf
+    # Prepend the index of the package to the string representation of the package so that I can get the package 
+    # object from the index later
+    $PackageCounter = -1 # Start the counter at -1 so that the first package is 0
+    $SelectedPackages = $Packages | ForEach-Object {
+        $PackageCounter++
+        "$($PackageCounter) $($_.ToString())" 
+    } | fzf --ansi `
             --multi `
             --cycle `
             --layout=reverse `
@@ -96,125 +167,116 @@ function Invoke-FuzzyPackager {
             --separator="━" `
             --tabstop=4 `
             --tiebreak=index `
+            --with-nth=2.. `
 
     # If the user didn't select anything return
-    if(-not $selectedPackages){
+    if(-not $SelectedPackages){
+        Write-Host "[$($PSStyle.Foreground.Yellow)FuzzyPackages$($PSStyle.Reset)] No packages selected, exiting..."
+
         # Reset the lastexitcode to 0 then return
         $global:LASTEXITCODE = 0
         return
     }
 
+    # If the user wants to confirm the action prompt them
+    if ($Confirm) {
+        # TODO: Print the packages that will be acted on
+        $confirm = Read-Host -Prompt "Are you sure you want to $($Action) the selected packages? (y/n)"
+        if ($confirm -ne "y" -and $confirm -ne "Y") {
+            Write-Host "Exiting..."
+            return
+        }
+    }
+
     # Loop through the selected packages
-    foreach ($package in $selectedPackages) {
+    foreach ($PackageString in $SelectedPackages) {
 
-        # Extract the pertinent information from the selected package
-        $source = $package | Select-String -Pattern "^([\w\-:]+)" | ForEach-Object { $_.Matches.Groups[1].Value } # All text before the first space
+        # Get the index of the package from the string representation of the package
+        $Index = $PackageString | Select-String -Pattern "^\d+" | ForEach-Object { $_.Matches.Groups[0].Value }
 
-        # Check which source from the sourceInfo variable the package is from
-        foreach ($entry in $SourceInfo.keys) {
-            if ($source.StartsWith($SourceInfo[$entry].ShortName)) {
-                $source = $SourceInfo[$entry].Name # Set the source to the full name of the source
-                break
-            }
-        }
-
-        # NOTE: All of the above has been refactored to use the SourceInfo variable
-        # TODO: Refactor the below to use the SourceInfo variable
-
-        if ($source -eq "winget"){
-            $name = $package | Select-String -Pattern "\s(.*) \(" -AllMatches | ForEach-Object { $_.Matches.Groups[-1].Value } # All text between the first space and the last opening bracket
-            $id = $package | Select-String -Pattern "\((.*?)\)" -AllMatches | ForEach-Object { $_.Matches.Groups[-1].Value } # All text between the last opening bracket and the last closing bracket
-        } elseif ($source -eq "scoop" -or $source -eq "choco" -or $source -eq "psget") {
-            # Get the name of the package from the selected line, scoop and choco don't have package ids
-            $id = $($package -split "\s+")[1] # Scoop packages never have spaces in their names so this should always work
-            $name = $id
-        }
-
-        # If the ID is empty return
-        if(-not $id){
-            Write-Host "No ID found." -ForegroundColor Red # This should never happen, but just in case
-        }
-
-        # Define the package title for use in when reporting the action to the user  
-        if ($PSVersionTable.PSVersion.Major -ge 7 -and $PSVersionTable.PSVersion.Minor -ge 2) {
-            if ($name -eq $id) { # If the name and id are the same (scoop/choco packages)
-                $packageTitle = "$($PSStyle.Foreground.Yellow)$id$($PSStyle.Foreground.BrightWhite)" 
-            } else {
-                $packageTitle = "$name ($($PSStyle.Foreground.Yellow)$id$($PSStyle.Foreground.BrightWhite))" # Use PSStyle to make the ID yellow if the user is running PS 7.2 or newer
-            }
-        } else {
-            if ($name -eq $id) { # If the name and id are the same (scoop/choco packages)
-                $packageTitle = "$id" 
-            } else {
-                $packageTitle = "$name ($id)" # If the user is running an older version of PS just use the default color
-            }
-        }
-
-        # Remove any remaining whitespace
-        $packageTitle = $packageTitle.Trim() 
+        # Get the package object from the index
+        $Package = $Packages[$Index]
+        
+        # If the Package's ID is null use the Package's Name instead
+        $Package.Id ??= $Package.Name # Null coalescing operator
 
         # Run the selected action
         switch($Action){
             "install" { 
                 # Prefix the source so that the user knows where the package is coming from
-                Write-Host "[$source] Installing $packageTitle"
+                Write-Host "[$($Package.Source.Name)] Installing $($Package.Title()) Version $($Package.Version)"
 
-                if ($source -eq "winget"){
-                    $result = Install-WinGetPackage $id # Cmdlet will report its own progress
-
-                    # Add the command to the history file so that the user can easily rerun it - works but requires a restart of the shell to take effect
-                    Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "Install-WinGetPackage $id"
-                } elseif ($source -eq "scoop"){
-                    $result = scoop install $id 
-                    Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "scoop install $id"
-                } elseif ($source -eq "choco"){
-                    choco install $id -y # Don't capture output, needs -y flag to install without prompting
-                    Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "choco install $id -y"
+                switch($Package.Source.Name){
+                    "winget" {
+                        $result = Install-WinGetPackage $Package.Id
+                        Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "Install-WinGetPackage $Package.Id"
+                    }
+                    "scoop" {
+                        $result = scoop install $Package.Id 
+                        Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "scoop install $Package.Id"
+                    }
+                    "choco" {
+                        choco install $Package.Id -y # Don't capture output, needs -y flag to install without prompting
+                        Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "choco install $Package.Id -y"
+                    }
                 }
             }
             "uninstall" {
-                Write-Host "[$source] Uninstalling $packageTitle"
-                if ($source -eq "winget"){
-                    $result = Uninstall-WinGetPackage $id
-                    Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "Uninstall-WinGetPackage $id"
-                } elseif ($source -eq "scoop"){
-                    $result = scoop uninstall $id
-                    Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "scoop uninstall $id"
-                } elseif ($source -eq "choco"){
-                    choco uninstall $id -y
-                    Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "choco uninstall $id -y"
+                Write-Host "[$($Package.Source.Name)] Uninstalling $($Package.Title())"
+
+                switch ($Package.Source.Name) {
+                    "winget" {
+                        $result = Uninstall-WinGetPackage $Package.Id
+                        Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "Uninstall-WinGetPackage $Package.Id"
+                    }
+                    "scoop" {
+                        $result = scoop uninstall $Package.Id
+                        Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "scoop uninstall $Package.Id"
+                    }
+                    "choco" {
+                        choco uninstall $Package.Id -y
+                        Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "choco uninstall $Package.Id -y"
+                    }
                 }
             }
             "update" {
-                Write-Host "[$source] Updating $packageTitle"
-                if ($source -eq "winget"){
-                    $result = Update-WinGetPackage $id
-                    Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "Update-WinGetPackage $id"
-                } elseif ($source -eq "scoop"){
-                    $result = scoop update $id
-                    Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "scoop update $id"
-                } elseif ($source -eq "choco"){
-                    choco upgrade $id -y
-                    Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "choco upgrade $id -y"
+                Write-Host "[$($Package.Source.Name)] Updating $($Package.Title()) to Version $($Package.AvailableVersion)"
+
+                switch ($Package.Source.Name) {
+                    "winget" {
+                        $result = Update-WinGetPackage $Package.Id
+                        Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "Update-WinGetPackage $Package.Id"
+                    }
+                    "scoop" {
+                        $result = scoop update $Package.Id
+                        Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "scoop update $Package.Id"
+                    }
+                    "choco" {
+                        choco upgrade $Package.Id -y
+                        Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "choco upgrade $Package.Id -y"
+                    }
                 }
             }
         }
 
-        # Report the result to the user
-        if ($source -eq "winget"){
+        switch($Package.Source.Name){
             # The WinGet cmdlets return a hashtable with a status key
-            if($result.status -eq "Ok"){
-                Write-Host (Get-Culture).TextInfo.ToTitleCase("$action succeeded") -ForegroundColor Green # Convert the action to title case for display
-            }else{
-                Write-Host (Get-Culture).TextInfo.ToTitleCase("$action failed") -ForegroundColor Red
+            "winget" {
+                if($result.status -eq "Ok"){
+                    Write-Host "[$($Package.Source.Name)] $($Action) succeeded" -ForegroundColor Green
+                }else{
+                    Write-Host "[$($Package.Source.Name)] $($Action) failed" -ForegroundColor Red
 
-                # Output the full status if the update failed
-                $result | Format-List | Out-String | Write-Host
+                    # Output the full status if the update failed
+                    $result | Format-List | Out-String | Write-Host
+                }
             }
-        } elseif ($source -eq "scoop"){
-            # Do Nothing atm, scoop's own output is sufficient
-        } elseif ($source -eq "choco"){
-            # Do Nothing atm, choco's own output is sufficient
+            "scoop" {
+                # Do Nothing atm, scoop's own output is sufficient
+            }
+            "choco" {
+                # Do Nothing atm, choco's own output is sufficient
+            }
         }
     }
 }
@@ -301,7 +363,10 @@ function Invoke-FuzzyPackageInstall {
 
         # The maximum age of the cache in minutes
         [Parameter()]
-        [int]$MaxCacheAge = 0
+        [int]$MaxCacheAge = 0,
+
+        # Pass the -Confirm switch to the main function
+        [switch]$Confirm
     )
 
     # If no sources are specified update all active sources
@@ -325,7 +390,7 @@ function Invoke-FuzzyPackageInstall {
         Write-Host "   $($PSStyle.Foreground.BrightWhite)Getting $source package list..." -NoNewline
 
         $availablePackages += Get-FuzzyPackageList `
-            -Command $SourceInfo[$source].InstallQuery `
+            -Command $SourceInfo[$source].AvailableQuery `
             -Formatter $SourceInfo[$source].Formatter `
             -CacheFile "$($ListDirectory)\$($source)\available.txt" `
             -MaxCacheAge $MaxCacheAge
@@ -340,7 +405,7 @@ function Invoke-FuzzyPackageInstall {
     }
 
     # Invoke the helper function to install the selected packages
-    Invoke-FuzzyPackager -Action install -Packages $availablePackages -Sources $Sources
+    Invoke-FuzzyPackager -Action install -Packages $availablePackages -Sources $Sources -Confirm:$Confirm
 }
 
 function Invoke-FuzzyPackageUninstall {
@@ -352,7 +417,10 @@ function Invoke-FuzzyPackageUninstall {
 
         # The max age of the cache in minutes
         [Parameter()]
-        [int]$MaxCacheAge = 0
+        [int]$MaxCacheAge = 0,
+
+        # Pass the -Confirm switch to the main function
+        [switch]$Confirm
     )
 
     # If no sources are specified, use all active sources
@@ -371,7 +439,7 @@ function Invoke-FuzzyPackageUninstall {
         Write-Host "   $($PSStyle.Foreground.BrightWhite)Getting $($source) packages..." -NoNewline
 
         $installedPackages += Get-FuzzyPackageList `
-            -Command $SourceInfo[$source].UninstallQuery `
+            -Command $SourceInfo[$source].InstalledQuery `
             -Formatter $SourceInfo[$source].Formatter `
             -CacheFile "$($ListDirectory)\$($source)\installed.txt" `
             -MaxCacheAge $MaxCacheAge
@@ -386,7 +454,7 @@ function Invoke-FuzzyPackageUninstall {
     }
 
     # Invoke the helper function to uninstall the selected packages
-    Invoke-FuzzyPackager -Action uninstall -Packages $installedPackages -Sources $Sources
+    Invoke-FuzzyPackager -Action uninstall -Packages $installedPackages -Sources $Sources -Confirm:$Confirm
 }
 
 function Invoke-FuzzyPackageUpdate {
@@ -407,7 +475,10 @@ function Invoke-FuzzyPackageUpdate {
 
         # The maximum age of the cache in minutes
         [Parameter()]
-        [int]$MaxCacheAge = 0
+        [int]$MaxCacheAge = 0,
+
+        # Pass the -Confirm switch to the main function
+        [switch]$Confirm
     )
 
     if ($Sources.Count -eq 0){
@@ -450,7 +521,7 @@ function Invoke-FuzzyPackageUpdate {
     }
 
     # Invoke the helper function to update the selected packages
-    Invoke-FuzzyPackager -Action update -Packages $updates -Sources $Sources
+    Invoke-FuzzyPackager -Action update -Packages $updates -Sources $Sources -Confirm:$Confirm
 }
 
 function Clear-FuzzyPackagesCache {
@@ -549,7 +620,7 @@ function Clear-FuzzyPackagesCacheFolder {
 ####################
 
 # Formatter for all winget packages
-function Format-WingetPackage {
+function New-WingetPackage {
     [CmdletBinding()]
     param(
         [Parameter(ValueFromPipeline)]
@@ -559,31 +630,30 @@ function Format-WingetPackage {
     )
 
     process {
+        $FuzzyPackage = [FuzzyPackage]@{
+            Name = $Package.Name
+            Id = $Package.Id
+            Version = $Package.Version
+            Source = $SourceInfo['winget']   
+        }
+
         # Source may be null if the package was installed manually or by the OS
         if(-not $Package.Source){
-            $source = "$($PSStyle.Foreground.Magenta)wg:$($PSStyle.Foreground.BrightBlack)N/A   " # Make the source grey to make other sources stand out, pad with spaces to align with other sources
+            $FuzzyPackage.Repo = 'N/A'
         }else{
-            $source = "$($PSStyle.Foreground.Magenta)wg:$($Package.Source)" # e.g. wg:winget, wg:msstore
+            $FuzzyPackage.Repo = $Package.Source
         }
-        
-        $name = "$($PSStyle.Foreground.White)$($Package.Name)"
-        $id = "$($PSStyle.Foreground.Yellow)$($Package.Id)$($PSStyle.Foreground.BrightWhite)" # Ensure the closing bracket is white
 
         if ($isUpdate){
-            # For packages with updates, show the version change that will occur - e.g. 1.0.0 -> 1.0.1
-            $version = "$($PSStyle.Foreground.Red)$($Package.Version) $($PSStyle.Foreground.Cyan)-> $($PSStyle.Foreground.Green)$($Package.AvailableVersions[0])"
-        }else{
-            # For packages without updates, show the current version - e.g. 1.0.0
-            $version = "$($PSStyle.Foreground.Green)$($Package.Version)"
+            $FuzzyPackage.AvailableVersion = $Package.AvailableVersions[0] # Just get the latest version
         }
 
-        # Output the formatted string - these strings are the ones that will be displayed in fzf
-        "$source `t $name ($id) `t $version"
+        $FuzzyPackage
     }
 }
 
 # Formatter for scoop packages without updates
-function Format-ScoopPackage {
+function New-ScoopPackage {
     [CmdletBinding()]
     param(
         [Parameter(ValueFromPipeline)]
@@ -593,27 +663,26 @@ function Format-ScoopPackage {
     )
 
     process {
-        $name = "$($PSStyle.Foreground.White)$($Package.Name)"
-
-        if ($isUpdate){
-            $source = "$($PSStyle.Foreground.Cyan)sc:scoop" # Bucket name is not returned by scoop status
-
-            # For packages with updates, show the version change that will occur - e.g. 1.0.0 -> 1.0.1
-            $version = "$($PSStyle.Foreground.Red)$($Package.'Installed version') $($PSStyle.Foreground.Cyan)-> $($PSStyle.Foreground.Green)$($Package.'Latest version')"
-        }else{
-            $source = "$($PSStyle.Foreground.Cyan)sc:$($Package.Source)" # e.g. sc:extras, sc:main
-
-            # For packages without updates, show the current version - e.g. 1.0.0
-            $version = "$($PSStyle.Foreground.Green)$($Package.Version)"
+        $FuzzyPackage = [FuzzyPackage]@{
+            Name = $Package.Name
+            Source = $SourceInfo['scoop']
         }
 
-        # Output the formatted string - these strings are the ones that will be displayed in fzf
-        "$source `t $name `t $version"
+        if ($isUpdate){
+            $FuzzyPackage.Repo = 'scoop' # Bucket name is not returned by scoop status
+            $FuzzyPackage.Version = $Package.'Installed version'
+            $FuzzyPackage.AvailableVersions = $Package.'Latest version'
+        }else{
+            $FuzzyPackage.Repo = $Package.Source
+            $FuzzyPackage.Version = $Package.Version
+        }
+
+        $FuzzyPackage
     }
 }
 
 # Formatter for choco packages
-function Format-ChocoPackage {
+function New-ChocoPackage {
     [CmdletBinding()]
     param(
         [Parameter(ValueFromPipeline)]
@@ -624,27 +693,28 @@ function Format-ChocoPackage {
     )
 
     process {
-        # Split the package name and version
-        # e.g. 7zip|19.0|20.0 -> 7zip, 19.0, 20.0. name|currentVersion|newVersion
+        # Choco's results are strings rather than objects, so we need to split them
         $PackageDetails = $Package -split '\|'
 
-        $name = "$($PSStyle.Foreground.White)$($PackageDetails[0])"
-        $source = "$($PSStyle.Foreground.Yellow)ch:choco" # Choco doesn't report the source so just use choco
-
-        if ($isUpdate){
-            # For packages with updates, show the version change that will occur - e.g. 1.0.0 -> 1.0.1
-            $version = "$($PSStyle.Foreground.Red)$($PackageDetails[1]) $($PSStyle.Foreground.Cyan)-> $($PSStyle.Foreground.Green)$($PackageDetails[2])"
-        } else {
-            # For packages without updates, show the current version - e.g. 1.0.0
-            $version = "$($PSStyle.Foreground.Green)$($PackageDetails[1])"
+        # Create a new FuzzyPackage object
+        $FuzzyPackage = [FuzzyPackage]@{
+            Name = $PackageDetails[0]
+            Source = $SourceInfo['choco']
+            Repo = 'choco'
+            Version = $PackageDetails[1]
         }
 
-        # Output the formatted string - these strings are the ones that will scbe displayed in fzf
-        "$source `t $name `t $version"
+        # If the package has an update, add the new version
+        if ($isUpdate){
+            $FuzzyPackage.AvailableVersion = $PackageDetails[2]
+        }
+
+        # For now, just return the FuzzyPackage's ToString() output
+        $FuzzyPackage
     }
 }
 
-function Format-PSGetPackage {
+function New-PSGetPackage {
     [CmdletBinding()]
     param(
         [Parameter(ValueFromPipeline)]
@@ -654,15 +724,14 @@ function Format-PSGetPackage {
     )
 
     process {
-        $source = "$($PSStyle.Foreground.Blue)ps:$($Package.Repository)" # e.g. ps:PSGallery
-        
-        $name = "$($PSStyle.Foreground.White)$($Package.Name)"
+        $FuzzyPackage = [FuzzyPackage]@{
+            Name = $Package.Name
+            Source = $SourceInfo['psget']
+            Repo = $Package.Repository
+            Version = $Package.Version
+        }
 
-        # For packages without updates, show the current version - e.g. 1.0.0
-        $version = "$($PSStyle.Foreground.Green)$($Package.Version)"
-
-        # Output the formatted string - these strings are the ones that will be displayed in fzf
-        "$source `t $name `t $version"
+        $FuzzyPackage
     }
 }
 
@@ -674,15 +743,18 @@ function Format-PSGetPackage {
 # This section must be run last so that the functions are defined
 
 $SourceInfo = @{
-    winget = @{
+    winget = [FuzzySource]@{
         # Source information
         Name = "winget"
         ShortName = "wg"
         DisplayName = "Windows Package Manager"
 
+        # Style information
+        Color = "$($PSStyle.Foreground.Magenta)"
+
         # Package queries
-        InstallQuery = { Find-WinGetPackage }
-        UninstallQuery = { Get-WinGetPackage }
+        AvailableQuery = { Find-WinGetPackage }
+        InstalledQuery = { Get-WinGetPackage }
         UpdateQuery = { Get-WinGetPackage | Where-Object {($IncludeUnknown -or ($_.Version -ne "Unknown")) -and $_.IsUpdateAvailable} }
 
         # Package commands
@@ -694,9 +766,9 @@ $SourceInfo = @{
         RefreshCommand = { winget source update *> $null }
 
         # Package formatters
-        Formatter = ${function:Format-WingetPackage}
+        Formatter = ${function:New-WingetPackage}
 
-        InstallStatus = {
+        CheckStatus = {
             # Check if winget is installed
             if (Get-Command winget -ErrorAction SilentlyContinue) {
                 return $true
@@ -710,15 +782,18 @@ $SourceInfo = @{
             $_.status -eq "Ok"
         }
     }
-    scoop = @{
+    scoop = [FuzzySource]@{
         # Source information
         Name = "scoop"
         ShortName = "sc"
         DisplayName = "Scoop"
 
+        # Style
+        Color = "$($PSStyle.Foreground.Cyan)"
+
         # Package queries 
-        InstallQuery = { scoop search 6> $null }
-        UninstallQuery = { scoop list 6> $null }
+        AvailableQuery = { scoop search 6> $null }
+        InstalledQuery = { scoop list 6> $null }
         UpdateQuery = { scoop status 6> $null }
 
         # Package commands
@@ -730,9 +805,9 @@ $SourceInfo = @{
         RefreshCommand = { scoop update *> $null }
 
         # Package formatters
-        Formatter = ${function:Format-ScoopPackage}
+        Formatter = ${function:New-ScoopPackage}
 
-        InstallStatus = {
+        CheckStatus = {
             # Check if scoop is installed
             if (Get-Command scoop -ErrorAction SilentlyContinue) {
                 return $true
@@ -746,15 +821,18 @@ $SourceInfo = @{
             $? -eq $true
         }
     }
-    choco = @{
+    choco = [FuzzySource]@{
         # Source information
         Name = "choco"
         ShortName = "ch"
         DisplayName = "Chocolatey"
 
+        # Style
+        Color = "$($PSStyle.Foreground.Yellow)"
+
         # Package queries
-        InstallQuery = { choco search -r }
-        UninstallQuery = { choco list --local-only -r } # TODO: Remove --local-only once choco updates to 2.0
+        AvailableQuery = { choco search -r }
+        InstalledQuery = { choco list --local-only -r } # TODO: Remove --local-only once choco updates to 2.0
         UpdateQuery = { choco outdated -r }
 
         # Package commands
@@ -766,9 +844,9 @@ $SourceInfo = @{
         RefreshCommand = { } # Choco doesn't have a refresh command
 
         # Package formatters
-        Formatter = ${function:Format-ChocoPackage}
+        Formatter = ${function:New-ChocoPackage}
 
-        InstallStatus = {
+        CheckStatus = {
             # Check if choco is installed
             if (Get-Command choco -ErrorAction SilentlyContinue) {
                 return $true
@@ -785,15 +863,18 @@ $SourceInfo = @{
             $LASTEXITCODE -eq 0 -or $LASTEXITCODE -eq 1641 -or $LASTEXITCODE -eq 3010
         }
     }
-    psget = @{
+    psget = [FuzzySource]@{
         # Source information
         Name = "psget"
         ShortName = "ps"
         DisplayName = "PowerShellGet"
 
+        # Style
+        Color = "$($PSStyle.Foreground.Blue)"
+
         # Package queries
-        InstallQuery = { Find-Module }
-        UninstallQuery = { Get-InstalledModule }
+        AvailableQuery = { Find-Module }
+        InstalledQuery = { Get-InstalledModule }
         UpdateQuery = { } # PSGet doesn't have an update query
         # TODO: Make a custom update query maybe check the version of the installed module and the latest version on the gallery? 
 
@@ -806,9 +887,9 @@ $SourceInfo = @{
         RefreshCommand = { } # PSGet doesn't have a refresh command
 
         # Package formatters
-        Formatter = ${function:Format-PSGetPackage}
+        Formatter = ${function:New-PSGetPackage}
 
-        InstallStatus = {
+        CheckStatus = {
             # TODO: Check if PSGet is installed
         }
 

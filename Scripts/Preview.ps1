@@ -3,6 +3,9 @@
 # Take the highlighted line from the fuzzy search and get the package information from winget
 $selection = $args[0]
 
+# HACK: Strip the index from the start of the line
+$selection = $selection -replace "^\d+\s+", ""
+
 $CacheDirectory = $args[1]
 
 # Get the source from the selected line
@@ -67,7 +70,7 @@ if ($source.StartsWith("wg:")) {
             $null, $info = $(winget show $id) -replace "^\s*Found\s*", "" -replace "Failed in attempting to update the source.*$", ""
 
             # Change the name of the package to be bold and the id of the package to be bold and yellow
-            $info = $info -replace "(^.*) \[(.*)\]$", "$($PSStyle.Bold)`$1 ($($PSStyle.Foreground.Yellow)`$2$($PSStyle.Foreground.BrightWhite))$($PSStyle.BoldOff)"
+            $info = $info -replace "(^.*) \[(.*)\]$", "$($PSStyle.Bold)`$1 ($($PSStyle.Foreground.Yellow)`$2$($PSStyle.Foreground.BrightWhite))$($PSStyle.Reset)"
 
             # Change the keys to be cyan and the values to be white - not bright white to emphasise the keys and header
             $info -replace "(^[a-zA-Z0-9 ]+:(?![/0-9]))", "$($PSStyle.Foreground.Cyan)`$1$($PSStyle.Foreground.White)" | Tee-Object -FilePath $CacheFile
