@@ -622,6 +622,7 @@ function Clear-FuzzyPackagesCacheFolder {
 # Formatter for all winget packages
 function New-WingetPackage {
     [CmdletBinding()]
+    [OutputType([FuzzyPackage])]
     param(
         [Parameter(ValueFromPipeline)]
         [object]$Package,
@@ -630,31 +631,21 @@ function New-WingetPackage {
     )
 
     process {
-        $FuzzyPackage = [FuzzyPackage]@{
+        [FuzzyPackage]@{
             Name = $Package.Name
             Id = $Package.Id
             Version = $Package.Version
             Source = $SourceInfo['winget']   
+            Repo = if (-not $Package.Source) { 'N/A' } else { $Package.Source }
+            AvailableVersion = if ($isUpdate) { $Package.AvailableVersion } else { $null }
         }
-
-        # Source may be null if the package was installed manually or by the OS
-        if(-not $Package.Source){
-            $FuzzyPackage.Repo = 'N/A'
-        }else{
-            $FuzzyPackage.Repo = $Package.Source
-        }
-
-        if ($isUpdate){
-            $FuzzyPackage.AvailableVersion = $Package.AvailableVersions[0] # Just get the latest version
-        }
-
-        $FuzzyPackage
     }
 }
 
 # Formatter for scoop packages without updates
 function New-ScoopPackage {
     [CmdletBinding()]
+    [OutputType([FuzzyPackage])]
     param(
         [Parameter(ValueFromPipeline)]
         [object]$Package,
@@ -684,6 +675,7 @@ function New-ScoopPackage {
 # Formatter for choco packages
 function New-ChocoPackage {
     [CmdletBinding()]
+    [OutputType([FuzzyPackage])]
     param(
         [Parameter(ValueFromPipeline)]
         [string]$Package,
@@ -697,25 +689,19 @@ function New-ChocoPackage {
         $PackageDetails = $Package -split '\|'
 
         # Create a new FuzzyPackage object
-        $FuzzyPackage = [FuzzyPackage]@{
+        [FuzzyPackage]@{
             Name = $PackageDetails[0]
             Source = $SourceInfo['choco']
             Repo = 'choco'
             Version = $PackageDetails[1]
+            AvailableVersion = if ($isUpdate) { $PackageDetails[2] }
         }
-
-        # If the package has an update, add the new version
-        if ($isUpdate){
-            $FuzzyPackage.AvailableVersion = $PackageDetails[2]
-        }
-
-        # For now, just return the FuzzyPackage's ToString() output
-        $FuzzyPackage
     }
 }
 
 function New-PSGetPackage {
     [CmdletBinding()]
+    [OutputType([FuzzyPackage])]
     param(
         [Parameter(ValueFromPipeline)]
         [object]$Package,
@@ -724,14 +710,12 @@ function New-PSGetPackage {
     )
 
     process {
-        $FuzzyPackage = [FuzzyPackage]@{
+        [FuzzyPackage]@{
             Name = $Package.Name
             Source = $SourceInfo['psget']
             Repo = $Package.Repository
             Version = $Package.Version
         }
-
-        $FuzzyPackage
     }
 }
 
