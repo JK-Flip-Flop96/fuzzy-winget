@@ -1,10 +1,11 @@
-# *** FuzzyWinget ***
-# Author: Stuart Miller
-# Version: 0.2.0
-# Description: A module of functions to interact with WinGet using fzf
-# License: MIT
-# Repository: https://github.com/JK-Flip-Flop96/Fuzzy-Winget
-##########################################################################################
+###################################################################################################################
+# *** FuzzyPackages ***                                                                                           #
+# Author: Stuart Miller                                                                                           #
+# Version: 0.2.0                                                                                                  #           
+# Description: A module of functions for interacting with package managers using fzf                              #
+# License: MIT                                                                                                    #
+# Repository: https://github.com/JK-Flip-Flop96/Fuzzy-Winget                                                      #   
+###################################################################################################################
 
 ####################
 # Class Definition #
