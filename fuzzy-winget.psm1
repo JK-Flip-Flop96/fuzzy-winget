@@ -680,7 +680,6 @@ function New-ChocoPackage {
         [Parameter(ValueFromPipeline)]
         [string]$Package,
 
-        # Tells the function to append the version change
         [switch]$isUpdate
     )
 
@@ -742,9 +741,18 @@ $SourceInfo = @{
         UpdateQuery = { Get-WinGetPackage | Where-Object {($IncludeUnknown -or ($_.Version -ne "Unknown")) -and $_.IsUpdateAvailable} }
 
         # Package commands
-        InstallCommand = { Install-WinGetPackage }
-        UninstallCommand = { Uninstall-WinGetPackage }
-        UpdateCommand = { Update-WinGetPackage }
+        InstallCommand = { 
+            param($Package)
+            Install-WinGetPackage $Package.Id
+        }
+        UninstallCommand = { 
+            param($Package)
+            Uninstall-WinGetPackage $Package.Id
+        }
+        UpdateCommand = { 
+            param($Package)
+            Update-WinGetPackage $Package.Id
+        }
 
         # Source commands
         RefreshCommand = { winget source update *> $null }
@@ -781,9 +789,18 @@ $SourceInfo = @{
         UpdateQuery = { scoop status 6> $null }
 
         # Package commands
-        InstallCommand = { scoop install }
-        UninstallCommand = { scoop uninstall }
-        UpdateCommand = { scoop update }
+        InstallCommand = {
+            param($Package)
+            scoop install $Package.Name
+        }
+        UninstallCommand = { 
+            param($Package)
+            scoop uninstall $Package.Name
+        }
+        UpdateCommand = { 
+            param($Package)
+            scoop update $Package.Name
+        }
 
         # Source commands
         RefreshCommand = { scoop update *> $null }
@@ -813,16 +830,27 @@ $SourceInfo = @{
 
         # Style
         Color = "$($PSStyle.Foreground.Yellow)"
-
+ 
         # Package queries
+        # -r provides machine-readable output
         AvailableQuery = { choco search -r }
-        InstalledQuery = { choco list --local-only -r } # TODO: Remove --local-only once choco updates to 2.0
+        InstalledQuery = { choco list --local-only -r } # FUTURE: Remove --local-only once choco updates to 2.0
         UpdateQuery = { choco outdated -r }
 
         # Package commands
-        InstallCommand = { choco install }
-        UninstallCommand = { choco uninstall }
-        UpdateCommand = { choco upgrade }
+        # -y automatically answers yes to all prompts
+        InstallCommand = { 
+            param($Package)
+            choco install $Package.Name -y
+        }
+        UninstallCommand = { 
+            param($Package) 
+            choco uninstall $Package.Name -y
+        }
+        UpdateCommand = { 
+            param($Package)
+            choco upgrade $Package.Name -y
+        }
 
         # Source commands
         RefreshCommand = { } # Choco doesn't have a refresh command
@@ -859,13 +887,29 @@ $SourceInfo = @{
         # Package queries
         AvailableQuery = { Find-Module }
         InstalledQuery = { Get-InstalledModule }
-        UpdateQuery = { } # PSGet doesn't have an update query
-        # TODO: Make a custom update query maybe check the version of the installed module and the latest version on the gallery? 
+        UpdateQuery = {
+            # PSGet doesn't have a built-in update query, so we have to do it ourselves 
+            Get-InstalledModule | ForEach-Object {
+                $LatestVersion = Find-Module $_.Name | Select-Object -ExpandProperty Version
+                if ($LatestVersion -gt $_.Version) {
+                    $_
+                }
+            }
+        } 
 
         # Package commands
-        InstallCommand = { Install-Module }
-        UninstallCommand = { Uninstall-Module }
-        UpdateCommand = { Update-Module } # This is redundant until I can jerry-rig an update query
+        InstallCommand = { 
+            param($Package)
+            Install-Module $Package.Name
+        }
+        UninstallCommand = { 
+            param($Package)
+            Uninstall-Module $Package.Name
+        }
+        UpdateCommand = { 
+            param($Package)
+            Update-Module $Package.Name
+        }
 
         # Source commands
         RefreshCommand = { } # PSGet doesn't have a refresh command
@@ -874,7 +918,8 @@ $SourceInfo = @{
         Formatter = ${function:New-PSGetPackage}
 
         CheckStatus = {
-            # TODO: Check if PSGet is installed
+            # HACK: I'm not sure if this is the best way to check if PSGet is installed
+            return $(Get-Module -Name PowerShellGet -ListAvailable) | Measure-Object.Count -gt 0
         }
 
         ResultCheck = {
