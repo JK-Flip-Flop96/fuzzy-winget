@@ -44,7 +44,7 @@ class FuzzyPackage {
     [string]$Id # The ID of the package (if applicable)
     [string]$Version # The version of the package
     [string]$AvailableVersion # The latest available version of the package (if applicable)
-    [string]$Source # The source of the package
+    [string]$Source # The source of the package. This is the key of the $SourceDefinitions hashtable
     [string]$Repo # The repository of the package
 
     # Convert the FuzzyPackage to a string for display in fzf
@@ -73,306 +73,21 @@ class FuzzyPackage {
 # Source Configuraton #
 #######################
 
-# The following hash table contains the configuration for each package source
-# This section must be run last so that the functions are defined
+# Hash table to store the source definitions
+$global:SourceDefinitions = @{}
 
-$global:SourceDefinitions = @{
-    winget = [FuzzySource]@{
-        # Source information
-        Name             = 'winget'
-        ShortName        = 'wg'
-        DisplayName      = 'Windows Package Manager'
-
-        # Style information
-        Color            = "$($PSStyle.Foreground.Magenta)"
-
-        # Package queries
-        AvailableQuery   = { Find-WinGetPackage }
-        InstalledQuery   = { Get-WinGetPackage }
-        UpdateQuery      = { 
-            Get-WinGetPackage | 
-                Where-Object { ($IncludeUnknown -or ($_.Version -ne 'Unknown')) -and $_.IsUpdateAvailable } 
-        }
-
-        # Package commands
-        InstallCommand   = { 
-            param($Package)
-            Install-WinGetPackage $Package.Id
-        }
-        UninstallCommand = { 
-            param($Package)
-            Uninstall-WinGetPackage $Package.Id
-        }
-        UpdateCommand    = { 
-            param($Package)
-            Update-WinGetPackage $Package.Id
-        }
-
-        # Source commands
-        RefreshCommand   = { winget source update *> $null }
-
-        # Package formatters
-        Formatter        = {
-            [OutputType([FuzzyPackage])]
-            param(
-                [Parameter(ValueFromPipeline)]
-                [object]$Package,
-
-                [switch]$isUpdate
-            )
-
-            process {
-                [FuzzyPackage]@{
-                    Name             = $Package.Name
-                    Id               = $Package.Id
-                    Version          = $Package.Version
-                    Source           = 'winget'   
-                    Repo             = if (-not $Package.Source) { 'N/A' } else { $Package.Source }
-                    AvailableVersion = if ($isUpdate) { $Package.AvailableVersions[0] }
-                }
-            }
-        }
-
-        CheckStatus      = {
-            # Check if winget is installed
-            if (Get-Command winget -ErrorAction SilentlyContinue) {
-                return $true
-            } else {
-                return $false
-            }
-        }
-
-        ResultCheck      = {
-            # Check if the winget command was successful
-            $_.status -eq 'Ok'
-        }
-    }
-    scoop  = [FuzzySource]@{
-        # Source information
-        Name             = 'scoop'
-        ShortName        = 'sc'
-        DisplayName      = 'Scoop'
-
-        # Style
-        Color            = "$($PSStyle.Foreground.Cyan)"
-
-        # Package queries 
-        AvailableQuery   = { scoop search 6> $null }
-        InstalledQuery   = { scoop list 6> $null }
-        UpdateQuery      = { scoop status 6> $null }
-
-        # Package commands
-        InstallCommand   = {
-            param($Package)
-            scoop install $Package.Name
-        }
-        UninstallCommand = { 
-            param($Package)
-            scoop uninstall $Package.Name
-        }
-        UpdateCommand    = { 
-            param($Package)
-            scoop update $Package.Name
-        }
-
-        # Source commands
-        RefreshCommand   = { scoop update *> $null }
-
-        # Package formatters
-        Formatter        = {
-            [OutputType([FuzzyPackage])]
-            param(
-                [Parameter(ValueFromPipeline)]
-                [object]$Package,
-
-                [switch]$isUpdate
-            )
-
-            process {
-                $ScoopPackage = [FuzzyPackage]@{
-                    Name   = $Package.Name
-                    Source = 'scoop'
-                }
-
-                if ($isUpdate) {
-                    $ScoopPackage.Repo = 'scoop' # Bucket name is not returned by scoop status
-                    $ScoopPackage.Version = $Package.'Installed version'
-                    $ScoopPackage.AvailableVersions = $Package.'Latest version'
-                } else {
-                    $ScoopPackage.Repo = $Package.Source
-                    $ScoopPackage.Version = $Package.Version
-                }
-
-                $ScoopPackage
-            }
-        }
-
-        CheckStatus      = {
-            # Check if scoop is installed
-            if (Get-Command scoop -ErrorAction SilentlyContinue) {
-                return $true
-            } else {
-                return $false
-            }
-        }
-
-        ResultCheck      = {
-            # Check if the scoop command was successful
-            $? -eq $true
-        }
-    }
-    choco  = [FuzzySource]@{
-        # Source information
-        Name             = 'choco'
-        ShortName        = 'ch'
-        DisplayName      = 'Chocolatey'
-
-        # Style
-        Color            = "$($PSStyle.Foreground.Yellow)"
- 
-        # Package queries
-        # -r provides machine-readable output
-        AvailableQuery   = { choco search -r }
-        InstalledQuery   = { choco list --local-only -r } # FUTURE: Remove --local-only once choco updates to 2.0
-        UpdateQuery      = { choco outdated -r }
-
-        # Package commands
-        # -y automatically answers yes to all prompts
-        InstallCommand   = { 
-            param($Package)
-            choco install $Package.Name -y
-        }
-        UninstallCommand = { 
-            param($Package) 
-            choco uninstall $Package.Name -y
-        }
-        UpdateCommand    = { 
-            param($Package)
-            choco upgrade $Package.Name -y
-        }
-
-        # Source commands
-        RefreshCommand   = { } # Choco doesn't have a refresh command
-
-        # Package formatters
-        Formatter        = {
-            [OutputType([FuzzyPackage])]
-            param(
-                [Parameter(ValueFromPipeline)]
-                [string]$Package,
-
-                [switch]$isUpdate
-            )
-
-            process {
-                # Choco's results are strings rather than objects, so we need to split them
-                $PackageDetails = $Package -split '\|'
-
-                # Create a new FuzzyPackage object
-                [FuzzyPackage]@{
-                    Name             = $PackageDetails[0]
-                    Source           = 'choco'
-                    Repo             = 'choco'
-                    Version          = $PackageDetails[1]
-                    AvailableVersion = if ($isUpdate) { $PackageDetails[2] }
-                }
-            }
-        }
-
-        CheckStatus      = {
-            # Check if choco is installed
-            if (Get-Command choco -ErrorAction SilentlyContinue) {
-                return $true
-            } else {
-                return $false
-            }
-        }
-
-        ResultCheck      = {
-            # Check if the choco command was successful
-            # 0 is returned when the command is successful
-            # 1641 is returned when a reboot is initiated
-            # 3010 is returned when a reboot is required
-            $LASTEXITCODE -eq 0 -or $LASTEXITCODE -eq 1641 -or $LASTEXITCODE -eq 3010
-        }
-    }
-    psget  = [FuzzySource]@{
-        # Source information
-        Name             = 'psget'
-        ShortName        = 'ps'
-        DisplayName      = 'PowerShellGet'
-
-        # Style
-        Color            = "$($PSStyle.Foreground.Blue)"
-
-        # Package queries
-        AvailableQuery   = { Find-Module }
-        InstalledQuery   = { Get-InstalledModule }
-        UpdateQuery      = {
-            # PSGet doesn't have a built-in update query, so we have to do it ourselves 
-            Get-InstalledModule | ForEach-Object {
-                $LatestVersion = Find-Module $_.Name | Select-Object -ExpandProperty Version
-                if ($LatestVersion -gt $_.Version) {
-                    # Add the latest version to the package object so that it can be used in the formatter
-                    $_ | Add-Member -MemberType NoteProperty -Name LatestVersion -Value $LatestVersion
-                    $_
-                }
-            }
-        } 
-
-        # Package commands
-        InstallCommand   = { 
-            param($Package)
-            Install-Module $Package.Name
-        }
-        UninstallCommand = { 
-            param($Package)
-            Uninstall-Module $Package.Name
-        }
-        UpdateCommand    = { 
-            param($Package)
-            Update-Module $Package.Name
-        }
-
-        # Source commands
-        RefreshCommand   = { } # PSGet doesn't have a refresh command
-
-        # Package formatters
-        Formatter        = {
-            [OutputType([FuzzyPackage])]
-            param(
-                [Parameter(ValueFromPipeline)]
-                [object]$Package,
-
-                [switch]$isUpdate
-            )
-
-            process {
-                [FuzzyPackage]@{
-                    Name             = $Package.Name
-                    Source           = 'psget'
-                    Repo             = $Package.Repository
-                    Version          = $Package.Version
-                    AvailableVersion = if ($isUpdate) { $Package.LatestVersion }
-                }
-            }
-        }
-
-        CheckStatus      = {
-            # HACK: I'm not sure if this is the best way to check if PSGet is installed
-            return $(Get-Module -Name PowerShellGet -ListAvailable) | Measure-Object.Count -gt 0
-        }
-
-        ResultCheck      = {
-            $? -eq $true
-        }
-    }
+# Load sources from the Sources folder
+Get-ChildItem -Path "$PSScriptRoot\Sources" -Filter '*.ps1' -Recurse | ForEach-Object {
+    $SourceDefinitions[$_.BaseName] = [FuzzySource]$(. $_.FullName)
 }
 
-# Global Variables
-# Settings for the module
+########################
+# Module Configuration #
+########################
+
+# This hashtable stores the default configuration options for the module
 # TODO: Function to set these variables, like Set-PSReadLineOption
-$global:FuzzyWinget = @{
+$global:FuzzyPackagesOptions = @{
     # Directory to store the cache files in
     CacheDirectory = "$env:tmp\FuzzyPackages" 
 
@@ -381,24 +96,24 @@ $global:FuzzyWinget = @{
     Sources        = @()
 
     # The default sources to use when no sources are specified
-    ActiveSources  = @('winget', 'scoop', 'choco', 'psget')
+    ActiveSources  = $global:SourceDefinitions.Keys
 
     # Allow the use of Nerd Fonts
     # If this is set to $true, the module will use the Nerd Font symbols
-    UseNerdFonts  = $true
+    # Currently only used in one location, not sure if that will ever change
+    UseNerdFonts   = $true
 }
 
 # Set the module's cache directory to the default if it doesn't exist
 # TODO: This should be moved to the Initialise script
-if (-not (Test-Path $global:FuzzyWinget.CacheDirectory)) {
-    New-Item -ItemType Directory -Path $global:FuzzyWinget.CacheDirectory -Force | Out-Null
+if (-not (Test-Path $global:FuzzyPackagesOptions.CacheDirectory)) {
+    New-Item -ItemType Directory -Path $global:FuzzyPackagesOptions.CacheDirectory -Force | Out-Null
 }
 
 ####################
 # Helper Functions #
 ####################
 
-# TODO: This function is an abomination and needs to be improved
 # Helper function to handle the actual running of winget commands for the other functions in this module
 # NOTE: This function is not exported and should not be called directly
 function Invoke-FuzzyPackager {
@@ -431,7 +146,7 @@ function Invoke-FuzzyPackager {
     })$((Get-Culture).TextInfo.ToTitleCase("$Action Packages"))"
 
     # If Nerd Fonts are enabled, use an icons depicting a package
-    $PromptText = if ($global:FuzzyWinget.UseNerdFonts) { ' >' } else { '>' }
+    $PromptText = if ($global:FuzzyPackagesOptions.UseNerdFonts) { ' >' } else { '>' }
     
 
     # --- End of setup for fzf ---
@@ -468,7 +183,7 @@ function Invoke-FuzzyPackager {
         --border-label " $WindowTitle " `
         --border-label-pos=3 `
         --margin=0 `
-        --preview "$PSExecutable -noLogo -noProfile -nonInteractive -File `"$PSScriptRoot\Scripts\Preview.ps1`" {} `"$($global:FuzzyWinget.CacheDirectory)\Preview`"" `
+        --preview "$PSExecutable -noLogo -noProfile -nonInteractive -File `"$PSScriptRoot\Scripts\Preview.ps1`" {} `"$($global:FuzzyPackagesOptions.CacheDirectory)\Preview`"" `
         --preview-window '40%,border-sharp,wrap' `
         --preview-label "$($PSStyle.Foreground.Magenta)Package Information" `
         --prompt=$PromptText `
@@ -497,94 +212,37 @@ function Invoke-FuzzyPackager {
         }
     }
 
+    # Get the package objects from the selected packages by index, then sort them by source
+    $PackagesToAction = $SelectedPackages | ForEach-Object { 
+        $Index = $_ | Select-String -Pattern '^\d+' | ForEach-Object { $_.Matches.Groups[0].Value }
+        $Packages[$Index]
+    } | Sort-Object -Property Source
+
     # Loop through the selected packages
-    foreach ($PackageString in $SelectedPackages) {
+    foreach ($Package in $PackagesToAction) {
 
-        # Get the index of the package from the string representation of the package
-        $Index = $PackageString | Select-String -Pattern '^\d+' | ForEach-Object { $_.Matches.Groups[0].Value }
-
-        # Get the package object from the index
-        $Package = $Packages[$Index]
-        
-        # If the Package's ID is null use the Package's Name instead
-        $Package.Id ??= $Package.Name # Null coalescing operator
+        # Get the source definition using the key from the package
+        $SourceDefinition = $SourceDefinitions[$Package.Source]
 
         # Run the selected action
         switch ($Action) {
             'install' { 
-                # Prefix the source so that the user knows where the package is coming from
-                Write-Host "[$($Package.Source.Name)] Installing $($Package.Title()) Version $($Package.Version)"
+                Write-Host "[$($SourceDefinition.Color)$($SourceDefinition.DisplayName)$($PSStyle.Reset)] " + 
+                "Installing $($Package.Title()) Version $($Package.Version)"
 
-                switch ($Package.Source.Name) {
-                    'winget' {
-                        $result = Install-WinGetPackage $Package.Id
-                        Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "Install-WinGetPackage $Package.Id"
-                    }
-                    'scoop' {
-                        $result = scoop install $Package.Id 
-                        Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "scoop install $Package.Id"
-                    }
-                    'choco' {
-                        choco install $Package.Id -y # Don't capture output, needs -y flag to install without prompting
-                        Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "choco install $Package.Id -y"
-                    }
-                }
+                & $SourceDefinition.InstallCommand -Package $Package
             }
             'uninstall' {
-                Write-Host "[$($Package.Source.Name)] Uninstalling $($Package.Title())"
+                Write-Host "[$($SourceDefinition.Color)$($SourceDefinition.DisplayName)$($PSStyle.Reset)] " + 
+                "Uninstalling $($Package.Title()) Version $($Package.Version)"
 
-                switch ($Package.Source.Name) {
-                    'winget' {
-                        $result = Uninstall-WinGetPackage $Package.Id
-                        Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "Uninstall-WinGetPackage $Package.Id"
-                    }
-                    'scoop' {
-                        $result = scoop uninstall $Package.Id
-                        Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "scoop uninstall $Package.Id"
-                    }
-                    'choco' {
-                        choco uninstall $Package.Id -y
-                        Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "choco uninstall $Package.Id -y"
-                    }
-                }
+                & $SourceDefinition.UninstallCommand -Package $Package
             }
             'update' {
-                Write-Host "[$($Package.Source.Name)] Updating $($Package.Title()) to Version $($Package.AvailableVersion)"
+                Write-Host "[$($SourceDefinition.Color)$($SourceDefinition.DisplayName)$($PSStyle.Reset)] " + 
+                "Updating $($Package.Title()) to Version $($Package.AvailableVersion)"
 
-                switch ($Package.Source.Name) {
-                    'winget' {
-                        $result = Update-WinGetPackage $Package.Id
-                        Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "Update-WinGetPackage $Package.Id"
-                    }
-                    'scoop' {
-                        $result = scoop update $Package.Id
-                        Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "scoop update $Package.Id"
-                    }
-                    'choco' {
-                        choco upgrade $Package.Id -y
-                        Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "choco upgrade $Package.Id -y"
-                    }
-                }
-            }
-        }
-
-        switch ($Package.Source.Name) {
-            # The WinGet cmdlets return a hashtable with a status key
-            'winget' {
-                if ($result.status -eq 'Ok') {
-                    Write-Host "[$($Package.Source.Name)] $($Action) succeeded" -ForegroundColor Green
-                } else {
-                    Write-Host "[$($Package.Source.Name)] $($Action) failed" -ForegroundColor Red
-
-                    # Output the full status if the update failed
-                    $result | Format-List | Out-String | Write-Host
-                }
-            }
-            'scoop' {
-                # Do Nothing atm, scoop's own output is sufficient
-            }
-            'choco' {
-                # Do Nothing atm, choco's own output is sufficient
+                & $SourceDefinition.UpdateCommand -Package $Package
             }
         }
     }
@@ -601,10 +259,8 @@ function Update-FuzzyPackageSources {
 
     # If no sources are specified update all active sources
     if (-not $Sources) {
-        $Sources = $global:FuzzyWinget.ActiveSources
+        $Sources = $global:FuzzyPackagesOptions.ActiveSources
     }
-
-
 
     Write-Host "$($PSStyle.Foreground.Blue):: $($PSStyle.Reset)Refreshing Packages Sources"
 
@@ -612,18 +268,24 @@ function Update-FuzzyPackageSources {
     $CurrentSource = 0
     $SourceCount = $Sources.Count
 
+    # Start a stopwatch to time the refresh
     $Stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
+    Write-Progress -Activity 'Refresh Progress:' -Status 'Starting Refresh...' -PercentComplete 0 -Id 0
+
     foreach ($Source in $Sources) {
-        Write-Progress -Activity "Refresh Progress:" -Status "Refreshing $($SourceDefinitions[$Source].DisplayName) Packages... ($($CurrentSource + 1) of $SourceCount)" -PercentComplete (($CurrentSource / $SourceCount) * 100)
+        Write-Progress -Activity 'Refresh Progress:' `
+            -Status "Refreshing $($SourceDefinitions[$Source].DisplayName) Packages... ($($CurrentSource + 1) of $SourceCount)" `
+            -PercentComplete (($CurrentSource / $SourceCount) * 100) -Id 0
 
         Invoke-Command $SourceDefinitions[$Source].RefreshCommand
+
+        $CurrentSource++
     }
 
-    Write-Progress -Activity "Refresh Progress:" -Completed
+    Write-Progress -Activity 'Refresh Progress:' -Completed -Id 0
 
-    Write-Host "   $($PSStyle.Foreground.Green)Refresh Complete! Took $($Stopwatch.Elapsed.TotalSeconds) seconds"
-    Write-Host '' # Newline
+    Write-Host "   $($PSStyle.Foreground.Green)Refresh Complete! Took $($Stopwatch.Elapsed.TotalSeconds) seconds`n"
 }
 
 function Get-FuzzyPackageList {
@@ -689,7 +351,7 @@ function Invoke-FuzzyPackageInstall {
 
     # If no sources are specified update all active sources
     if (-not $Sources) {
-        $Sources = $global:FuzzyWinget.ActiveSources
+        $Sources = $global:FuzzyPackagesOptions.ActiveSources
     }
 
     if ($UpdateSources) {
@@ -697,7 +359,7 @@ function Invoke-FuzzyPackageInstall {
         Update-FuzzyPackageSources -Sources $Sources
     }
 
-    $ListDirectory = "$($global:FuzzyWinget.CacheDirectory)\List"
+    $ListDirectory = "$($global:FuzzyPackagesOptions.CacheDirectory)\List"
 
     Write-Host "$($PSStyle.Foreground.Blue):: $($PSStyle.Reset)Getting Available Packages"
 
@@ -708,10 +370,12 @@ function Invoke-FuzzyPackageInstall {
     $CurrentSource = 0 
     $SourceCount = $Sources.Count
 
+    Write-Progress -Activity 'Fetch Progress:' -Status 'Starting Fetch...' -PercentComplete 0 -Id 1
+
     foreach ($Source in $Sources) {
         Write-Progress -Activity 'Fetch Progress:' `
             -Status "Getting $($SourceDefinitions[$Source].DisplayName) Package List... ($($CurrentSource + 1) of $($SourceCount))" `
-            -PercentComplete ([math]::Round(($CurrentSource / $SourceCount) * 100))
+            -PercentComplete ([math]::Round(($CurrentSource / $SourceCount) * 100)) -Id 1
 
         $availablePackages += Get-FuzzyPackageList `
             -Command $SourceDefinitions[$Source].AvailableQuery `
@@ -722,7 +386,7 @@ function Invoke-FuzzyPackageInstall {
         $CurrentSource++
     }
 
-    Write-Progress -Activity 'Fetch Progress:' -Completed
+    Write-Progress -Activity 'Fetch Progress:' -Completed -Id 1
 
     # If no packages were found, exit
     if ($availablePackages.Count -eq 0) {
@@ -753,10 +417,10 @@ function Invoke-FuzzyPackageUninstall {
 
     # If no sources are specified, use all active sources
     if (-not $Sources) {
-        $Sources = $global:FuzzyWinget.ActiveSources
+        $Sources = $global:FuzzyPackagesOptions.ActiveSources
     }
 
-    $ListDirectory = "$($global:FuzzyWinget.CacheDirectory)\List"
+    $ListDirectory = "$($global:FuzzyPackagesOptions.CacheDirectory)\List"
 
     Write-Host "$($PSStyle.Foreground.Blue):: $($PSStyle.Reset)Getting Installed Packages"
 
@@ -771,10 +435,12 @@ function Invoke-FuzzyPackageUninstall {
     $CurrentSource = 0 
     $SourceCount = $($Sources | Measure-Object).Count
 
+    Write-Progress -Activity 'Fetch Progress:' -Status 'Starting Fetch...' -PercentComplete 0 -Id 2
+
     foreach ($Source in $Sources) {
         Write-Progress -Activity 'Fetch Progress:' `
             -Status "Getting Installed $($SourceDefinitions[$Source].DisplayName) Packages... ($($CurrentSource + 1) of $($SourceCount))" `
-            -PercentComplete ([math]::Round(($CurrentSource / $SourceCount) * 100))
+            -PercentComplete ([math]::Round(($CurrentSource / $SourceCount) * 100)) -Id 2
 
         $installedPackages += Get-FuzzyPackageList `
             -Command $SourceDefinitions[$Source].InstalledQuery `
@@ -785,7 +451,7 @@ function Invoke-FuzzyPackageUninstall {
         $CurrentSource++
     }
 
-    Write-Progress -Activity 'Fetch Progress:' -Completed
+    Write-Progress -Activity 'Fetch Progress:' -Completed -Id 2
     
     # If no packages were found, exit
     if ($installedPackages.Count -eq 0) {
@@ -825,7 +491,7 @@ function Invoke-FuzzyPackageUpdate {
 
     if ($Sources.Count -eq 0) {
         # If no sources were specified get updates from all sources
-        $Sources = $global:FuzzyWinget.ActiveSources
+        $Sources = $global:FuzzyPackagesOptions.ActiveSources
     }
 
     if ($UpdateSources) {
@@ -834,7 +500,7 @@ function Invoke-FuzzyPackageUpdate {
     }
 
     # Path to the cache directory
-    $ListDirectory = "$($global:FuzzyWinget.CacheDirectory)\List"
+    $ListDirectory = "$($global:FuzzyPackagesOptions.CacheDirectory)\List"
 
     Write-Host "$($PSStyle.Foreground.Blue):: $($PSStyle.Reset)Querying for Updates"
 
@@ -845,10 +511,12 @@ function Invoke-FuzzyPackageUpdate {
     $CurrentSource = 0
     $SourceCount = $($Sources | Measure-Object).Count
 
+    Write-Progress -Activity 'Fetch Progress:' -Status 'Starting Fetch...' -PercentComplete 0 -Id 3
+
     foreach ($Source in $Sources) {
         Write-Progress -Activity 'Fetch Progress:' `
             -Status "Checking $($SourceDefinitions[$Source].DisplayName) for Available Updates... ($($CurrentSource + 1) of $($SourceCount))" `
-            -PercentComplete ([math]::Round(($CurrentSource / $SourceCount) * 100))
+            -PercentComplete ([math]::Round(($CurrentSource / $SourceCount) * 100)) -Id 3
 
         $updates += Get-FuzzyPackageList `
             -Command $SourceDefinitions[$Source].UpdateQuery `
@@ -860,7 +528,7 @@ function Invoke-FuzzyPackageUpdate {
         $CurrentSource++
     }
 
-    Write-Progress -Activity 'Fetch Progress:' -Completed
+    Write-Progress -Activity 'Fetch Progress:' -Completed -Id 3
 
     # If there are no updates available, exit
     if ($updates.Count -eq 0) {
@@ -886,7 +554,7 @@ function Clear-FuzzyPackagesCache {
 
     if ($Sources.Count -eq 0) {
         # If no sources were specified, clear the cache for all active sources
-        $Sources = $global:FuzzyWinget.ActiveSources
+        $Sources = $global:FuzzyPackagesOptions.ActiveSources
     }
 
     # If neither -List or -Preview were specified, clear both caches. 
@@ -920,7 +588,7 @@ function Clear-FuzzyPackagesCacheFolder {
 
     if ($Sources.Count -eq 0) {
         # If no sources were specified, clear the cache for all active sources
-        $Sources = $global:FuzzyWinget.ActiveSources
+        $Sources = $global:FuzzyPackagesOptions.ActiveSources
     }
 
     foreach ($Type in $Types) {
@@ -930,7 +598,7 @@ function Clear-FuzzyPackagesCacheFolder {
         Write-Host "$($PSStyle.Foreground.Blue):: $($PSStyle.Reset)Clearing Package $Type Cache"
 
         # Path to the cache directory
-        $ListDirectory = "$($global:FuzzyWinget.CacheDirectory)\$Type"
+        $ListDirectory = "$($global:FuzzyPackagesOptions.CacheDirectory)\$Type"
 
         $ErrorOccured = $false
 
@@ -971,4 +639,4 @@ function Clear-FuzzyPackagesCacheFolder {
 ###################
 
 # Add the source information to the global variable
-$global:FuzzyWinget.Sources = @($SourceDefinitions.Keys)
+$global:FuzzyPackagesOptions.Sources = @($SourceDefinitions.Keys)
