@@ -57,7 +57,12 @@
     CheckStatus      = {
         # Check if winget is installed
         if (Get-Command winget -ErrorAction SilentlyContinue) {
-            return $true
+            # Check if powershell module is installed
+            if (Get-Module -Name 'Microsoft.WinGet.Client*' -ErrorAction SilentlyContinue) {
+                $true
+            } else {
+                $false
+            }
         } else {
             return $false
         }
@@ -68,3 +73,7 @@
         $_.status -eq 'Ok'
     }
 }
+
+# Notes
+# -----
+# This script could be rewritten remove the requirement for the Microsoft.WinGet.Client module.
