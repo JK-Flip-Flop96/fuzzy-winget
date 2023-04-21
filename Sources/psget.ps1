@@ -62,7 +62,7 @@
 
     CheckStatus      = {
         # HACK: I'm not sure if this is the best way to check if PSGet is installed
-        return $(Get-Module -Name PowerShellGet -ListAvailable) | Measure-Object.Count -gt 0
+        return $($(Get-Module -Name PowerShellGet -ListAvailable) | Measure-Object).Count -gt 0
     }
 
     ResultCheck      = {
