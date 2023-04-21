@@ -58,6 +58,7 @@
         # Check if winget is installed
         if (Get-Command winget -ErrorAction SilentlyContinue) {
             # Check if powershell module is installed
+            # Wildcard is used here because I'm not sure whether the -PSModule suffix will remain
             if (Get-Module -Name 'Microsoft.WinGet.Client*' -ErrorAction SilentlyContinue) {
                 $true
             } else {

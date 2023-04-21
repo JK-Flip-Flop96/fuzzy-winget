@@ -81,6 +81,15 @@ Get-ChildItem -Path "$PSScriptRoot\Sources" -Filter '*.ps1' -Recurse | ForEach-O
     $SourceDefinitions[$_.BaseName] = [FuzzySource]$(. $_.FullName)
 }
 
+# Check the status of each source
+$global:SourceDefinitions.Keys | ForEach-Object {
+    if ($SourceDefinitions[$_].CheckStatus.Invoke()){
+        Write-Verbose "Source $($_) is installed and working" 
+    } else {
+        Write-Warning "Source $($_) is not installed or is not working"
+    }
+}
+
 ########################
 # Module Configuration #
 ########################
