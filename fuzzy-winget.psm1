@@ -92,10 +92,9 @@ $global:FuzzyPackagesOptions = @{
     CacheDirectory = "$env:tmp\FuzzyPackages" 
 
     # All of the sources that can be used
-    # Will be populated by the keys of the SourceInfo variable
-    Sources        = @()
+    Sources        = $global:SourceDefinitions.Keys
 
-    # The default sources to use when no sources are specified
+    # The default sources to use when no sources are specified - this should be a subset of the Sources variable
     ActiveSources  = $global:SourceDefinitions.Keys
 
     # Allow the use of Nerd Fonts
@@ -104,18 +103,17 @@ $global:FuzzyPackagesOptions = @{
     UseNerdFonts   = $true
 }
 
-# Set the module's cache directory to the default if it doesn't exist
-# TODO: This should be moved to the Initialise script
+# Create the cache directory if it doesn't exist
 if (-not (Test-Path $global:FuzzyPackagesOptions.CacheDirectory)) {
     New-Item -ItemType Directory -Path $global:FuzzyPackagesOptions.CacheDirectory -Force | Out-Null
 }
 
-####################
-# Helper Functions #
-####################
+#################
+# Main Function #
+#################
 
-# Helper function to handle the actual running of winget commands for the other functions in this module
-# NOTE: This function is not exported and should not be called directly
+# The main function of the module, this function cannot be called directly. 
+# It is interfaced via the Invoke-[Install/Uninstall/Update] functions.
 function Invoke-FuzzyPackager {
     [CmdletBinding()]
     param(
@@ -202,47 +200,65 @@ function Invoke-FuzzyPackager {
         return
     }
 
+    # Get the package objects from the selected packages by index, then sort them by source
+    $PackageGroups = $SelectedPackages | ForEach-Object { 
+        $Index = $_ | Select-String -Pattern '^\d+' | ForEach-Object { $_.Matches.Groups[0].Value }
+        $Packages[$Index]
+    } | Group-Object -Property Source 
+
+    # Display the packages to be acted on
+    Write-Host "[$($PSStyle.Foreground.Yellow)FuzzyPackages$($PSStyle.Reset)] Packages to $($Action):"
+    # Iterate through the package groups and display the packages to be acted on in each group
+    foreach ($PackageGroup in $PackageGroups) {
+        # Get the source definition using the key from the package
+        $SourceDefinition = $global:SourceDefinitions[$PackageGroup.Name]
+
+        # Display the packages to be acted on
+        Write-Host "[$($SourceDefinition.Color)$($SourceDefinition.DisplayName)$($PSStyle.Reset)]" -NoNewline
+        Write-Host " $($PackageGroup.Group.Count) $(if ($PackageGroup.Group.Count -eq 1) { 'package' } else { 'packages' })"
+        
+        $PackageGroup.Group | ForEach-Object { 
+            Write-Host "  - $($_.Title()) Version $($_.Version)"
+        }
+    }
+
     # If the user wants to confirm the action prompt them
     if ($Confirm) {
-        # TODO: Print the packages that will be acted on
-        $confirm = Read-Host -Prompt "Are you sure you want to $($Action) the selected packages? (y/n)"
-        if ($confirm -ne 'y' -and $confirm -ne 'Y') {
+        $UserChoice = Read-Host -Prompt "Are you sure you want to $($Action) the selected packages? (y/n)"
+        if (($UserChoice -ne 'y') -and ($UserChoice -ne 'Y')) {
             Write-Host 'Exiting...'
             return
         }
     }
 
-    # Get the package objects from the selected packages by index, then sort them by source
-    $PackagesToAction = $SelectedPackages | ForEach-Object { 
-        $Index = $_ | Select-String -Pattern '^\d+' | ForEach-Object { $_.Matches.Groups[0].Value }
-        $Packages[$Index]
-    } | Sort-Object -Property Source
+    # Loop through each package group
+    foreach ($PackageGroup in $PackageGroups) {
 
-    # Loop through the selected packages
-    foreach ($Package in $PackagesToAction) {
+        # Get the source definition using name from the group
+        $SourceDefinition = $SourceDefinitions[$PackageGroup.Name]
 
-        # Get the source definition using the key from the package
-        $SourceDefinition = $SourceDefinitions[$Package.Source]
+        # Loop through each package in the group
+        foreach ($Package in $PackageGroup.Group) {
+            # Run the selected action
+            switch ($Action) {
+                'install' { 
+                    Write-Host "[$($SourceDefinition.Color)$($SourceDefinition.DisplayName)$($PSStyle.Reset)] " + 
+                    "Installing $($Package.Title()) Version $($Package.Version)"
 
-        # Run the selected action
-        switch ($Action) {
-            'install' { 
-                Write-Host "[$($SourceDefinition.Color)$($SourceDefinition.DisplayName)$($PSStyle.Reset)] " + 
-                "Installing $($Package.Title()) Version $($Package.Version)"
+                    & $SourceDefinition.InstallCommand -Package $Package
+                }
+                'uninstall' {
+                    Write-Host "[$($SourceDefinition.Color)$($SourceDefinition.DisplayName)$($PSStyle.Reset)] " + 
+                    "Uninstalling $($Package.Title()) Version $($Package.Version)"
 
-                & $SourceDefinition.InstallCommand -Package $Package
-            }
-            'uninstall' {
-                Write-Host "[$($SourceDefinition.Color)$($SourceDefinition.DisplayName)$($PSStyle.Reset)] " + 
-                "Uninstalling $($Package.Title()) Version $($Package.Version)"
+                    & $SourceDefinition.UninstallCommand -Package $Package
+                }
+                'update' {
+                    Write-Host "[$($SourceDefinition.Color)$($SourceDefinition.DisplayName)$($PSStyle.Reset)] " + 
+                    "Updating $($Package.Title()) to Version $($Package.AvailableVersion)"
 
-                & $SourceDefinition.UninstallCommand -Package $Package
-            }
-            'update' {
-                Write-Host "[$($SourceDefinition.Color)$($SourceDefinition.DisplayName)$($PSStyle.Reset)] " + 
-                "Updating $($Package.Title()) to Version $($Package.AvailableVersion)"
-
-                & $SourceDefinition.UpdateCommand -Package $Package
+                    & $SourceDefinition.UpdateCommand -Package $Package
+                }
             }
         }
     }
@@ -271,7 +287,7 @@ function Update-FuzzyPackageSources {
     # Start a stopwatch to time the refresh
     $Stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
-    Write-Progress -Activity 'Refresh Progress:' -Status 'Starting Refresh...' -PercentComplete 0 -Id 0
+    Write-Progress -Activity 'Refresh Progress:' -Status "Refreshing $($SourceDefinitions[$Sources[0]].DisplayName) Packages... (1 of $SourceCount)" -PercentComplete 0 -Id 0
 
     foreach ($Source in $Sources) {
         Write-Progress -Activity 'Refresh Progress:' `
@@ -319,11 +335,12 @@ function Get-FuzzyPackageList {
 
     # Check if the cache is older than the specified max age or if it's empty
     if ((Get-Date).Subtract((Get-Item $CacheFile).LastWriteTime).TotalMinutes -gt $MaxCacheAge -or (Get-Content $CacheFile).Count -eq 0) {
-        # Get all packages from WinGet and format them for fzf
-        &$Command | & $Formatter -isUpdate:$isUpdate | Tee-Object -FilePath $CacheFile
+        # Get all packages from WinGet and format them for fzf, export the packages to the cache file in xml format
+        &$Command | & $Formatter -isUpdate:$isUpdate | Tee-Object -Variable Packages | Export-Clixml -Path $CacheFile
+        $Packages
     } else {
         # If the cache is still valid, use it
-        Get-Content $CacheFile
+        Import-Clixml -Path $CacheFile
     }
 }
 
@@ -370,7 +387,9 @@ function Invoke-FuzzyPackageInstall {
     $CurrentSource = 0 
     $SourceCount = $Sources.Count
 
-    Write-Progress -Activity 'Fetch Progress:' -Status 'Starting Fetch...' -PercentComplete 0 -Id 1
+    Write-Progress -Activity 'Fetch Progress:' `
+        -Status "Getting $($SourceDefinitions[$Sources[0]].DisplayName) Package List..." `
+        -PercentComplete 0 -Id 1
 
     foreach ($Source in $Sources) {
         Write-Progress -Activity 'Fetch Progress:' `
@@ -435,7 +454,9 @@ function Invoke-FuzzyPackageUninstall {
     $CurrentSource = 0 
     $SourceCount = $($Sources | Measure-Object).Count
 
-    Write-Progress -Activity 'Fetch Progress:' -Status 'Starting Fetch...' -PercentComplete 0 -Id 2
+    Write-Progress -Activity 'Fetch Progress:' `
+        -Status "Getting Installed $($SourceDefinitions[$Sources[0]].DisplayName) Packages..." `
+        -PercentComplete 0 -Id 2
 
     foreach ($Source in $Sources) {
         Write-Progress -Activity 'Fetch Progress:' `
@@ -445,7 +466,7 @@ function Invoke-FuzzyPackageUninstall {
         $installedPackages += Get-FuzzyPackageList `
             -Command $SourceDefinitions[$Source].InstalledQuery `
             -Formatter $SourceDefinitions[$Source].Formatter `
-            -CacheFile "$($ListDirectory)\$($Source)\available.txt" `
+            -CacheFile "$($ListDirectory)\$($Source)\installed.txt" `
             -MaxCacheAge $MaxCacheAge
 
         $CurrentSource++
@@ -511,7 +532,9 @@ function Invoke-FuzzyPackageUpdate {
     $CurrentSource = 0
     $SourceCount = $($Sources | Measure-Object).Count
 
-    Write-Progress -Activity 'Fetch Progress:' -Status 'Starting Fetch...' -PercentComplete 0 -Id 3
+    Write-Progress -Activity 'Fetch Progress:' `
+        -Status "Checking $($SourceDefinitions[$Sources[0]].DisplayName) for Available Updates..." `
+        -PercentComplete 0 -Id 3
 
     foreach ($Source in $Sources) {
         Write-Progress -Activity 'Fetch Progress:' `
@@ -521,7 +544,7 @@ function Invoke-FuzzyPackageUpdate {
         $updates += Get-FuzzyPackageList `
             -Command $SourceDefinitions[$Source].UpdateQuery `
             -Formatter $SourceDefinitions[$Source].Formatter `
-            -CacheFile "$($ListDirectory)\$($Source)\available.txt" `
+            -CacheFile "$($ListDirectory)\$($Source)\updates.txt" `
             -MaxCacheAge $MaxCacheAge `
             -isUpdate
 
@@ -627,7 +650,8 @@ function Clear-FuzzyPackagesCacheFolder {
             Write-Host 'An error occured while clearing the cache' -ForegroundColor Red
             Write-Host "Perhaps you don't have permission to delete the cache files?" -ForegroundColor Red
 
-            # TODO: This should be more specific, e.g. "You don't have permission to delete the cache files for the following sources: winget, scoop"
+            # TODO: This should be more specific, 
+            # e.g. "You don't have permission to delete the cache files for the following sources: winget, scoop"
         }
     }
 }
@@ -638,5 +662,5 @@ function Clear-FuzzyPackagesCacheFolder {
 # Final Setup     #
 ###################
 
-# Add the source information to the global variable
-$global:FuzzyPackagesOptions.Sources = @($SourceDefinitions.Keys)
+# Space for additional setup code that needs to be run after the rest of the script has been loaded
+# None currently required
