@@ -9,30 +9,30 @@
 
     # Package queries
     # -r provides machine-readable output
-    AvailableQuery   = { choco search -r }
-    InstalledQuery   = { choco list --local-only -r } # FUTURE: Remove --local-only once choco updates to 2.0
-    UpdateQuery      = { choco outdated -r }
+    GetAvailablePackages   = { choco search -r }
+    GetInstalledPackages   = { choco list --local-only -r } # FUTURE: Remove --local-only once choco updates to 2.0
+    GetPackageUpdates      = { choco outdated -r }
 
     # Package commands
     # -y automatically answers yes to all prompts
-    InstallCommand   = { 
+    InstallPackage   = { 
         param($Package)
         choco install $Package.Name -y
     }
-    UninstallCommand = { 
+    UninstallPackage = { 
         param($Package) 
         choco uninstall $Package.Name -y
     }
-    UpdateCommand    = { 
+    UpdatePackage    = { 
         param($Package)
         choco upgrade $Package.Name -y
     }
 
     # Source commands
-    RefreshCommand   = { } # Choco doesn't have a refresh command
+    UpdateSources   = { } # Choco doesn't have a refresh command
 
     # Package formatters
-    Formatter        = {
+    PackageFormatter        = {
         [OutputType([FuzzyPackage])]
         param(
             [Parameter(ValueFromPipeline)]
@@ -56,7 +56,7 @@
         }
     }
 
-    CheckStatus      = {
+    SourceCheck      = {
         # Check if choco is installed
         if (Get-Command choco -ErrorAction SilentlyContinue) {
             return $true

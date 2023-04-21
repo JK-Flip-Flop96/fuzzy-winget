@@ -10,32 +10,108 @@
 ####################
 # Class Definition #
 ####################
+<#
+.SYNOPSIS
+    Class to store information about a package manager source
 
-# Class to store information about a source
-# Default examples are defined for winget, scoop, choco and psget at the bottom of this file
+.DESCRIPTION
+    Class to store information about a package manager source. This class is used to store information about a 
+    package manager source, such as the name, short name, display name, color, and functions to get information 
+    about packages and perform actions on packages
+
+.PARAMETER Name
+    The name of the source. This is the key of the $SourceDefinitions hashtable
+
+.PARAMETER ShortName
+    The short name of the source. This is used to display the source name in the fzf menu without taking up too
+    much space
+
+.PARAMETER DisplayName
+    The display name of the source. This is used to display where space is not an issue, e.g in the installation 
+    progress updates
+
+.PARAMETER Color
+    The color of the source. This is used to color the source name in the fzf menu. The string should contain a
+    valid ANSI escape sequence.
+
+.PARAMETER GetAvailablePackages
+    A scriptblock that returns a list of available packages. The scriptblock should return an array of 
+    FuzzyPackage objects
+
+.PARAMETER GetInstalledPackages
+    A scriptblock that returns a list of installed packages. The scriptblock should return an array of 
+    FuzzyPackage objects
+
+.PARAMETER GetPackageUpdates
+    A scriptblock that returns a list of packages that have updates available. The scriptblock should return an 
+    array of FuzzyPackage objects
+
+.PARAMETER InstallPackage
+    A scriptblock that installs a package. The scriptblock should take a FuzzyPackage object as a parameter.
+
+.PARAMETER UninstallPackage
+    A scriptblock that uninstalls a package. The scriptblock should take a FuzzyPackage object as a parameter.
+
+.PARAMETER UpdatePackage
+    A scriptblock that updates a package. The scriptblock should take a FuzzyPackage object as a parameter.
+
+.PARAMETER UpdateSources
+    A scriptblock that updates the sources of the package manager. 
+    Note: Not all packages will have/need this
+
+.PARAMETER PackageFormatter
+    A scriptblock that formats the output of the package queries. The scriptblock should take an object (Dependant 
+    on the result of the query) as a parameter and return a FuzzyPackage object. 
+    
+    The scriptblock should also have a isUpdate parameter that is a switch;
+    If the scriptblock is used to format the output of the GetPackageUpdates query, the isUpdate parameter should 
+    be set to $true. If the scriptblock is used to format the output of the GetAvailablePackages or 
+    GetInstalledPackages queries, the isUpdate parameter should be set to $false.
+
+.PARAMETER SourceCheck
+    A scriptblock that checks if the source is available. The scriptblock should return a boolean value. If the 
+    value is $true, the source is available. If the value is $false, the source is unavailable.
+
+    This can be implemented in any way you want as each package manager will have a different way of checking if 
+    the source is available. 
+    
+    For example, winget checks if the winget.exe file exists in the path and if the winget PowerShell module is 
+    installed. If both of these are true, the source is available. If either of these are false, 
+    the source is unavailable.
+
+.PARAMETER ResultCheck
+    A scriptblock that checks if the result of the previous action. The scriptblock should take an object the
+    result of the previous action as a parameter and return a boolean value. If the value is $true, the action was
+    successful. If the value is $false, the action was unsuccessful.
+
+    Note: It is not necessary to use the passed in object to check if the action was successful. You can use any
+    method you want to check if the action was successful. For example, PowerShellGet checks the automatic variable
+    $? to check if the action was successful. Or, chocolatey checks if the exit code of the previous command was 0.
+#>
 class FuzzySource {
-
     # Source information
-    [string]$Name # The name of the source
-    [string]$ShortName # The short name of the source
-    [string]$DisplayName # The full name of the source
-    [string]$Color # The color of the source, ANSI escape codes
+    [string]$Name
+    [string]$ShortName
+    [string]$DisplayName 
+    [string]$Color
 
-    # Queries 
-    [scriptblock]$AvailableQuery # The query to run to get the available packages
-    [scriptblock]$InstalledQuery # The query to run to get the installed packages
-    [scriptblock]$UpdateQuery # The query to run to get the packages that can be updated
+    # Package list queries
+    [scriptblock]$GetAvailablePackages 
+    [scriptblock]$GetInstalledPackages 
+    [scriptblock]$GetPackageUpdates
 
     # Actions
-    [scriptblock]$InstallCommand # The command to run to install a package
-    [scriptblock]$UninstallCommand # The command to run to uninstall a package
-    [scriptblock]$UpdateCommand # The command to run to update a package
+    [scriptblock]$InstallPackage 
+    [scriptblock]$UninstallPackage
+    [scriptblock]$UpdatePackage
 
-    # Misc
-    [scriptblock]$RefreshCommand # The command to run to refresh the source
-    [scriptblock]$CheckStatus # The command to run to check if the source is installed and working
-    [scriptblock]$Formatter # The command to run to format the output of the query
-    [scriptblock]$ResultCheck # Scriptblock to check if the result of an action
+    # Source Actions
+    [scriptblock]$UpdateSources
+    [scriptblock]$PackageFormatter
+
+    # Checks
+    [scriptblock]$SourceCheck
+    [scriptblock]$ResultCheck
 }
 
 # Class to stort information about a package
@@ -47,8 +123,17 @@ class FuzzyPackage {
     [string]$Source # The source of the package. This is the key of the $SourceDefinitions hashtable
     [string]$Repo # The repository of the package
 
-    # Convert the FuzzyPackage to a string for display in fzf
-    # Format: <Source> <Name> (<ID>) <Version> -> <AvailableVersion>
+    <#
+    .SYNOPSIS
+        Returns the string representation of the package
+
+    .DESCRIPTION
+        Returns the string representation of the package. The string is formatted as follows:
+        <Source color><Source short name>:<Repo><Reset><tab><Name><tab><Version>
+        If the package has an ID, it is appended to the name in yellow
+        If the package has an available version, it is appended to the version in green, with the current version 
+        in red
+    #>
     [string]ToString() {
         $SourceDefinition = $($global:SourceDefinitions)[$this.Source]
         return "$($SourceDefinition.Color)$($SourceDefinition.ShortName):$($this.Repo)$($global:PSStyle.Reset)`t" + 
@@ -62,7 +147,10 @@ class FuzzyPackage {
             })"
     }
 
-    # A string to represent the package in the install/uninstall/update steps
+    <#
+    .SYNOPSIS
+        Returns the title of the package, used for printing the package name during actions
+    #>
     [string]Title() {
         return "$($this.Name)" + 
         "$(if ($this.ID) { " ($($global:PSStyle.Foreground.Yellow)$($this.ID)$($global:PSStyle.Reset))" })"
@@ -83,12 +171,17 @@ Get-ChildItem -Path "$PSScriptRoot\Sources" -Filter '*.ps1' -Recurse | ForEach-O
 
 # Check the status of each source
 $global:SourceDefinitions.Keys | ForEach-Object {
-    if ($SourceDefinitions[$_].CheckStatus.Invoke()){
+    if ($SourceDefinitions[$_].SourceCheck.Invoke()){
         Write-Verbose "Source $($_) is installed and working" 
     } else {
         Write-Warning "Source $($_) is not installed or is not working"
     }
 }
+
+# TODO: Probably need to add some error handling here, e.g.:
+#   - Sources with the same name
+#   - Sources with the same short name
+#   - Sources with the same color (Not that this is a problem, but it might be confusing)
 
 ########################
 # Module Configuration #
@@ -121,22 +214,83 @@ if (-not (Test-Path $global:FuzzyPackagesOptions.CacheDirectory)) {
 # Main Function #
 #################
 
-# The main function of the module, this function cannot be called directly. 
-# It is interfaced via the Invoke-[Install/Uninstall/Update] functions.
+<#
+.SYNOPSIS
+    Installs, uninstalls or updates packages from various package managers using fzf
+
+.DESCRIPTION
+    Installs, uninstalls or updates packages from various package managers using fzf, with support for multiple
+    package managers and multiple sources for each package manager. 
+    
+    The package managers currently supported are:
+        - winget
+        - scoop
+        - choco
+        - psget
+
+    The sources for each package manager are defined in the Sources folder. Each source is defined in a separate
+    file, and the file name is used as the key for the source. The source files are dot sourced into the main
+    script, so they can be used to define functions and variables that are used by the source.
+
+.PARAMETER Action
+    The action to perform. This can be one of the following:
+        - install
+        - uninstall
+        - update
+
+.PARAMETER Sources
+    The sources to use for the action. This can be one or more of the following:
+        - winget
+        - scoop
+        - choco
+        - psget
+
+.PARAMETER Confirm
+    If this switch is specified, the user will be prompted to confirm the action before it is performed
+
+.PARAMETER Packages
+    The packages to act on. This can be one or more packages. The packages must be of type FuzzyPackage, which
+    is defined in this script. The FuzzyPackage class is used to store information about a package, and provices 
+    methods toconvert the package to a string for display in fzf.
+
+.EXAMPLE
+    Invoke-FuzzyPackager -Action install -Sources winget, scoop -Packages $Packages
+
+    The above will list all of the packages from the winget and scoop sources, and allow the user to select one or
+    more packages to install. 
+
+    Note: This is not the intended usage of this Cmdlet, but it is possible to use it this way.
+
+.INPUTS
+    FuzzyPackage
+
+.OUTPUTS
+    None
+
+.NOTES
+    This Cmdlet requires fzf to be installed and available in the path.
+
+    The fzf executable can be downloaded from GitHub, or installed using a package manager. The following are
+    some examples of how to install fzf using various package managers:
+
+    winget install fzf
+    scoop install fzf
+    choco install fzf
+#>
 function Invoke-FuzzyPackager {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        [ValidateSet('install', 'uninstall', 'update')] # Confirms that the action is one of the three supported actions
+        [ValidateSet('install', 'uninstall', 'update')]
         [string]$Action,
 
         [Parameter(Mandatory = $true)]
-        [ValidateSet('winget', 'scoop', 'choco', 'psget')] # Confirms that the source is one of the supported sources
+        [ValidateSet('winget', 'scoop', 'choco', 'psget')]
         [string[]]$Sources, 
 
-        [switch]$Confirm, # If the user should be prompted to confirm the action
+        [switch]$Confirm,
 
-        [Parameter(Mandatory = $true, ValueFromPipeline = $true)] # Confirms that there is at least one package to act on
+        [Parameter(Mandatory = $true, ValueFromPipeline = $true)]
         [FuzzyPackage[]]$Packages
     )
 
@@ -254,31 +408,47 @@ function Invoke-FuzzyPackager {
                     Write-Host "[$($SourceDefinition.Color)$($SourceDefinition.DisplayName)$($PSStyle.Reset)] " + 
                     "Installing $($Package.Title()) Version $($Package.Version)"
 
-                    & $SourceDefinition.InstallCommand -Package $Package
+                    & $SourceDefinition.InstallPackage -Package $Package
                 }
                 'uninstall' {
                     Write-Host "[$($SourceDefinition.Color)$($SourceDefinition.DisplayName)$($PSStyle.Reset)] " + 
                     "Uninstalling $($Package.Title()) Version $($Package.Version)"
 
-                    & $SourceDefinition.UninstallCommand -Package $Package
+                    & $SourceDefinition.UninstallPackage -Package $Package
                 }
                 'update' {
                     Write-Host "[$($SourceDefinition.Color)$($SourceDefinition.DisplayName)$($PSStyle.Reset)] " + 
                     "Updating $($Package.Title()) to Version $($Package.AvailableVersion)"
 
-                    & $SourceDefinition.UpdateCommand -Package $Package
+                    & $SourceDefinition.UpdatePackage -Package $Package
                 }
             }
         }
     }
 }
 
+<#
+.SYNOPSIS
+    Update the package sources
+
+.DESCRIPTION
+    Update the package sources, if no sources are specified all active sources will be updated.
+
+.PARAMETER Sources
+    The sources to update
+
+.EXAMPLE
+    Update-FuzzyPackageSources -Sources 'winget', 'scoop'
+    Update the winget and scoop sources
+
+    Note: This Cmdlet is not exported by default, the recommended way to use it is via the -UpdateSources switch 
+    available on the Invoke-FuzzyPackage[Install|Uninstall|Update] Cmdlets
+#>
 function Update-FuzzyPackageSources {
     [CmdletBinding()]
     param(
-        # The sources to update
         [Parameter()]
-        [ValidateSet('winget', 'scoop', 'choco', 'psget')] # Source names must match 
+        [ValidateSet('winget', 'scoop', 'choco', 'psget')]
         [string[]]$Sources
     )
 
@@ -303,7 +473,7 @@ function Update-FuzzyPackageSources {
             -Status "Refreshing $($SourceDefinitions[$Source].DisplayName) Packages... ($($CurrentSource + 1) of $SourceCount)" `
             -PercentComplete (($CurrentSource / $SourceCount) * 100) -Id 0
 
-        Invoke-Command $SourceDefinitions[$Source].RefreshCommand
+        Invoke-Command $SourceDefinitions[$Source].UpdateSources
 
         $CurrentSource++
     }
@@ -313,26 +483,58 @@ function Update-FuzzyPackageSources {
     Write-Host "   $($PSStyle.Foreground.Green)Refresh Complete! Took $($Stopwatch.Elapsed.TotalSeconds) seconds`n"
 }
 
+<#
+.SYNOPSIS
+    Get a list of packages from a source
+
+.DESCRIPTION
+    Get a list of packages from a source. This function will retrieve the packages from the cache if it is not 
+    older than the MaxCacheAge.
+
+.PARAMETER Command
+    The command that will be used to get the packages. This is a scriptblock defined in the source definition.
+
+.PARAMETER PackageFormatter
+    The PackageFormatter that will be used to format the packages into FuzzyPackage Objects. This is a scriptblock defined
+    in the source definition.
+
+.PARAMETER CacheFile
+    Path to the cache file that will be used to store the packages.
+
+.PARAMETER MaxCacheAge
+    The maximum age of the cache in minutes.
+
+.PARAMETER isUpdate
+    Argument to pass to the PackageFormatter. This is used to determine if the packages are being retrieved for an update
+    or not. Ultimately this is used to know how the package objects should be formatted.
+
+.EXAMPLE
+    Get-FuzzyPackageList -Command $SourceDefinitions['winget'].GetAvailablePackages `
+        -Formatter $SourceDefinitions['winget'].PackageFormatter `
+        -CacheFile [Some file path] `
+        -MaxCacheAge 60 `
+        -isUpdate
+    Get a list of packages from the winget source
+
+    Note: This Cmdlet is not exported by default, this function is invoked by the 
+    Invoke-FuzzyPackage[Install|Uninstall|Update] Cmdlets as required. The above example is roughly what the 
+    Invoke-FuzzyPackageInstall Cmdlet does.
+#>
 function Get-FuzzyPackageList {
     [CmdletBinding()]
     param(
-        # The command that will be used to get the packages
         [Parameter(Mandatory = $true)]
         [scriptblock]$Command,
-
-        # The formatter that will be used to format the packages into strings for fzf
+        
         [Parameter(Mandatory = $true)]
-        [scriptblock]$Formatter,
-
-        # Path to the cache file
+        [scriptblock]$PackageFormatter,
+        
         [Parameter(Mandatory = $true)]
         [string]$CacheFile,
 
-        # The maximum age of the cache in minutes
         [Parameter(Mandatory = $true)]
         [int]$MaxCacheAge,
 
-        # Argument to pass to the formatter
         [switch]$isUpdate
     )
 
@@ -345,7 +547,7 @@ function Get-FuzzyPackageList {
     # Check if the cache is older than the specified max age or if it's empty
     if ((Get-Date).Subtract((Get-Item $CacheFile).LastWriteTime).TotalMinutes -gt $MaxCacheAge -or (Get-Content $CacheFile).Count -eq 0) {
         # Get all packages from WinGet and format them for fzf, export the packages to the cache file in xml format
-        &$Command | & $Formatter -isUpdate:$isUpdate | Tee-Object -Variable Packages | Export-Clixml -Path $CacheFile
+        &$Command | & $PackageFormatter -isUpdate:$isUpdate | Tee-Object -Variable Packages | Export-Clixml -Path $CacheFile
         $Packages
     } else {
         # If the cache is still valid, use it
@@ -365,7 +567,7 @@ function Invoke-FuzzyPackageInstall {
         [string[]]$Sources,
 
         [Parameter()]
-        [switch]$UpdateSources,
+        [switch]$UpdateSourcess,
 
         # The maximum age of the cache in minutes
         [Parameter()]
@@ -380,7 +582,7 @@ function Invoke-FuzzyPackageInstall {
         $Sources = $global:FuzzyPackagesOptions.ActiveSources
     }
 
-    if ($UpdateSources) {
+    if ($UpdateSourcess) {
         # If the user specified the -UpdateSources switch, update the sources
         Update-FuzzyPackageSources -Sources $Sources
     }
@@ -406,8 +608,8 @@ function Invoke-FuzzyPackageInstall {
             -PercentComplete ([math]::Round(($CurrentSource / $SourceCount) * 100)) -Id 1
 
         $availablePackages += Get-FuzzyPackageList `
-            -Command $SourceDefinitions[$Source].AvailableQuery `
-            -Formatter $SourceDefinitions[$Source].Formatter `
+            -Command $SourceDefinitions[$Source].GetAvailablePackages `
+            -PackageFormatter $SourceDefinitions[$Source].PackageFormatter `
             -CacheFile "$($ListDirectory)\$($Source)\available.txt" `
             -MaxCacheAge $MaxCacheAge
 
@@ -473,8 +675,8 @@ function Invoke-FuzzyPackageUninstall {
             -PercentComplete ([math]::Round(($CurrentSource / $SourceCount) * 100)) -Id 2
 
         $installedPackages += Get-FuzzyPackageList `
-            -Command $SourceDefinitions[$Source].InstalledQuery `
-            -Formatter $SourceDefinitions[$Source].Formatter `
+            -Command $SourceDefinitions[$Source].GetInstalledPackages `
+            -PackageFormatter $SourceDefinitions[$Source].PackageFormatter `
             -CacheFile "$($ListDirectory)\$($Source)\installed.txt" `
             -MaxCacheAge $MaxCacheAge
 
@@ -509,7 +711,7 @@ function Invoke-FuzzyPackageUpdate {
 
         # Fetch updates for each source before looking for updates
         [Parameter()]
-        [switch]$UpdateSources,
+        [switch]$UpdateSourcess,
 
         # The maximum age of the cache in minutes
         [Parameter()]
@@ -524,7 +726,7 @@ function Invoke-FuzzyPackageUpdate {
         $Sources = $global:FuzzyPackagesOptions.ActiveSources
     }
 
-    if ($UpdateSources) {
+    if ($UpdateSourcess) {
         # If the user specified the -UpdateSources switch, update the sources
         Update-FuzzyPackageSources -Sources $Sources
     }
@@ -551,8 +753,8 @@ function Invoke-FuzzyPackageUpdate {
             -PercentComplete ([math]::Round(($CurrentSource / $SourceCount) * 100)) -Id 3
 
         $updates += Get-FuzzyPackageList `
-            -Command $SourceDefinitions[$Source].UpdateQuery `
-            -Formatter $SourceDefinitions[$Source].Formatter `
+            -Command $SourceDefinitions[$Source].GetPackageUpdates `
+            -PackageFormatter $SourceDefinitions[$Source].PackageFormatter `
             -CacheFile "$($ListDirectory)\$($Source)\updates.txt" `
             -MaxCacheAge $MaxCacheAge `
             -isUpdate

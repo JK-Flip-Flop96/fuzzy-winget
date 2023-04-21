@@ -1,39 +1,39 @@
 @{
     # Source information
-    Name             = 'winget'
-    ShortName        = 'wg'
-    DisplayName      = 'Windows Package Manager'
+    Name                 = 'winget'
+    ShortName            = 'wg'
+    DisplayName          = 'Windows Package Manager'
 
     # Style information
-    Color            = "$($PSStyle.Foreground.Magenta)"
+    Color                = "$($PSStyle.Foreground.Magenta)"
 
     # Package queries
-    AvailableQuery   = { Find-WinGetPackage }
-    InstalledQuery   = { Get-WinGetPackage }
-    UpdateQuery      = { 
+    GetAvailablePackages = { Find-WinGetPackage }
+    GetInstalledPackages = { Get-WinGetPackage }
+    GetPackageUpdates    = { 
         Get-WinGetPackage | 
             Where-Object { ($IncludeUnknown -or ($_.Version -ne 'Unknown')) -and $_.IsUpdateAvailable } 
     }
 
     # Package commands
-    InstallCommand   = { 
+    InstallPackage       = { 
         param($Package)
         Install-WinGetPackage $Package.Id
     }
-    UninstallCommand = { 
+    UninstallPackage     = { 
         param($Package)
         Uninstall-WinGetPackage $Package.Id
     }
-    UpdateCommand    = { 
+    UpdatePackage        = { 
         param($Package)
         Update-WinGetPackage $Package.Id
     }
 
     # Source commands
-    RefreshCommand   = { winget source update *> $null }
+    UpdateSources       = { winget source update *> $null }
 
     # Package formatters
-    Formatter        = {
+    PackageFormatter            = {
         [OutputType([FuzzyPackage])]
         param(
             [Parameter(ValueFromPipeline)]
@@ -54,7 +54,7 @@
         }
     }
 
-    CheckStatus      = {
+    SourceCheck          = {
         # Check if winget is installed
         if (Get-Command winget -ErrorAction SilentlyContinue) {
             # Check if powershell module is installed
@@ -69,7 +69,7 @@
         }
     }
 
-    ResultCheck      = {
+    ResultCheck          = {
         # Check if the winget command was successful
         $_.status -eq 'Ok'
     }

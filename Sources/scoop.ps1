@@ -12,29 +12,29 @@
     Color            = "$($PSStyle.Foreground.Cyan)"
 
     # Package queries 
-    AvailableQuery   = { scoop search 6> $null }
-    InstalledQuery   = { scoop list 6> $null }
-    UpdateQuery      = { scoop status 6> $null }
+    GetAvailablePackages   = { scoop search 6> $null }
+    GetInstalledPackages   = { scoop list 6> $null }
+    GetPackageUpdates      = { scoop status 6> $null }
 
     # Package commands
-    InstallCommand   = {
+    InstallPackage   = {
         param($Package)
         scoop install $Package.Name
     }
-    UninstallCommand = { 
+    UninstallPackage = { 
         param($Package)
         scoop uninstall $Package.Name
     }
-    UpdateCommand    = { 
+    UpdatePackage    = { 
         param($Package)
         scoop update $Package.Name
     }
 
     # Source commands
-    RefreshCommand   = { scoop update *> $null }
+    UpdateSources   = { scoop update *> $null }
 
     # Package formatters
-    Formatter        = {
+    PackageFormatter        = {
         [OutputType([FuzzyPackage])]
         param(
             [Parameter(ValueFromPipeline)]
@@ -62,7 +62,7 @@
         }
     }
 
-    CheckStatus      = {
+    SourceCheck      = {
         # Check if scoop is installed
         if (Get-Command scoop -ErrorAction SilentlyContinue) {
             return $true
