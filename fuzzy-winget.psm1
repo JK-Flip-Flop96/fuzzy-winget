@@ -772,10 +772,6 @@ function Invoke-FuzzyPackageUpdate {
         return
     }
 
-    foreach ($update in $updates) {
-        Write-Host if ($null -eq $update) { 'null' } else { $update.Name } -ForegroundColor Yellow
-    }
-
     # Invoke the helper function to update the selected packages
     Invoke-FuzzyPackager -Action update -Packages $updates -Sources $Sources -Confirm:$Confirm
 }
