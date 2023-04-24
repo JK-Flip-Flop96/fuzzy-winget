@@ -548,7 +548,9 @@ function Get-FuzzyPackageList {
     if ((Get-Date).Subtract((Get-Item $CacheFile).LastWriteTime).TotalMinutes -gt $MaxCacheAge -or (Get-Content $CacheFile).Count -eq 0) {
         # Get all packages from WinGet and format them for fzf, export the packages to the cache file in xml format
         &$Command | & $PackageFormatter -isUpdate:$isUpdate | Tee-Object -Variable Packages | Export-Clixml -Path $CacheFile
-        $Packages
+        if ($null -ne $Packages) {
+            $Packages # Only output the packages if there are any   
+        }
     } else {
         # If the cache is still valid, use it
         Import-Clixml -Path $CacheFile
@@ -768,6 +770,10 @@ function Invoke-FuzzyPackageUpdate {
     if ($updates.Count -eq 0) {
         Write-Host 'Everything is up to date' -ForegroundColor Green
         return
+    }
+
+    foreach ($update in $updates) {
+        Write-Host if ($null -eq $update) { 'null' } else { $update.Name } -ForegroundColor Yellow
     }
 
     # Invoke the helper function to update the selected packages
