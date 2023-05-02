@@ -1,38 +1,56 @@
 @{
     # Source information
-    Name             = 'choco'
-    ShortName        = 'ch'
-    DisplayName      = 'Chocolatey'
+    Name                 = 'choco'
+    ShortName            = 'ch'
+    DisplayName          = 'Chocolatey'
 
     # Style
-    Color            = "$($PSStyle.Foreground.Yellow)"
+    Color                = "$($PSStyle.Foreground.Yellow)"
 
     # Package queries
     # -r provides machine-readable output
-    GetAvailablePackages   = { choco search -r }
-    GetInstalledPackages   = { choco list --local-only -r } # FUTURE: Remove --local-only once choco updates to 2.0
-    GetPackageUpdates      = { choco outdated -r }
+    GetAvailablePackages = { choco search -r }
+    GetInstalledPackages = { choco list --local-only -r } # FUTURE: Remove --local-only once choco updates to 2.0
+    GetPackageUpdates    = { choco outdated -r }
 
     # Package commands
     # -y automatically answers yes to all prompts
-    InstallPackage   = { 
-        param($Package)
-        choco install $Package.Name -y
+    InstallPackage       = { 
+        param
+        (
+            [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true)]
+            [FuzzyPackage[]]$Packages
+        )
+        process {
+            choco install $($($Packages | Select-Object -ExpandProperty Name) -join ' ') -y
+        }
     }
-    UninstallPackage = { 
-        param($Package) 
-        choco uninstall $Package.Name -y
+    UninstallPackage     = { 
+        param
+        (
+            [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true)]
+            [FuzzyPackage[]]$Packages
+        )
+        process {
+            choco uninstall $($($Packages | Select-Object -ExpandProperty Name) -join ' ') -y
+        }
     }
-    UpdatePackage    = { 
-        param($Package)
-        choco upgrade $Package.Name -y
+    UpdatePackage        = { 
+        param
+        (
+            [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true)]
+            [FuzzyPackage[]]$Packages
+        )
+        process {
+            choco upgrade $($($Packages | Select-Object -ExpandProperty Name) -join ' ') -y
+        }
     }
 
     # Source commands
-    UpdateSources   = { } # Choco doesn't have a refresh command
+    UpdateSources        = { } # Choco doesn't have a refresh command
 
     # Package formatters
-    PackageFormatter        = {
+    PackageFormatter     = {
         [OutputType([FuzzyPackage])]
         param(
             [Parameter(ValueFromPipeline)]
@@ -56,7 +74,7 @@
         }
     }
 
-    SourceCheck      = {
+    SourceCheck          = {
         # Check if choco is installed
         if (Get-Command choco -ErrorAction SilentlyContinue) {
             return $true
@@ -65,7 +83,7 @@
         }
     }
 
-    ResultCheck      = {
+    ResultCheck          = {
         # Check if the choco command was successful
         # 0 is returned when the command is successful
         # 1641 is returned when a reboot is initiated

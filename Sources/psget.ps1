@@ -1,16 +1,16 @@
 @{
     # Source information
-    Name             = 'psget'
-    ShortName        = 'ps'
-    DisplayName      = 'PowerShellGet'
+    Name                 = 'psget'
+    ShortName            = 'ps'
+    DisplayName          = 'PowerShellGet'
 
     # Style
-    Color            = "$($PSStyle.Foreground.Blue)"
+    Color                = "$($PSStyle.Foreground.Blue)"
 
     # Package queries
-    GetAvailablePackages   = { Find-Module }
-    GetInstalledPackages   = { Get-InstalledModule }
-    GetPackageUpdates      = {
+    GetAvailablePackages = { Find-Module }
+    GetInstalledPackages = { Get-InstalledModule }
+    GetPackageUpdates    = {
         # PSGet doesn't have a built-in update query, so we have to do it ourselves 
         Get-InstalledModule | ForEach-Object {
             $LatestVersion = Find-Module $_.Name | Select-Object -ExpandProperty Version
@@ -23,24 +23,39 @@
     } 
 
     # Package commands
-    InstallPackage   = { 
-        param($Package)
-        Install-Module $Package.Name
+    InstallPackage       = { 
+        param(
+            [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true)]
+            [FuzzyPackage[]]$Packages
+        )
+        process {
+            Install-Module $($($Packages | Select-Object -ExpandProperty Name) -join ', ')
+        }
     }
-    UninstallPackage = { 
-        param($Package)
-        Uninstall-Module $Package.Name
+    UninstallPackage     = { 
+        param(
+            [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true)]
+            [FuzzyPackage[]]$Packages
+        )
+        process {
+            Uninstall-Module $($($Packages | Select-Object -ExpandProperty Name) -join ', ')
+        }
     }
-    UpdatePackage    = { 
-        param($Package)
-        Update-Module $Package.Name
+    UpdatePackage        = { 
+        param(
+            [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true)]
+            [FuzzyPackage[]]$Packages
+        )
+        process {
+            Update-Module $($($Packages | Select-Object -ExpandProperty Name) -join ', ')
+        }
     }
 
     # Source commands
-    UpdateSources   = { } # PSGet doesn't have a refresh command
+    UpdateSources        = { } # PSGet doesn't have a refresh command
 
     # Package formatters
-    PackageFormatter        = {
+    PackageFormatter     = {
         [OutputType([FuzzyPackage])]
         param(
             [Parameter(ValueFromPipeline)]
@@ -60,12 +75,12 @@
         }
     }
 
-    SourceCheck      = {
+    SourceCheck          = {
         # HACK: I'm not sure if this is the best way to check if PSGet is installed
         return $($(Get-Module -Name PowerShellGet -ListAvailable) | Measure-Object).Count -gt 0
     }
 
-    ResultCheck      = {
+    ResultCheck          = {
         $? -eq $true
     }
 }

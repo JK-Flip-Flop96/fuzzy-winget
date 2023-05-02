@@ -5,8 +5,6 @@
 - Add default aliases
 - Offer to update fzf where required 
   - Installation is now handled (Think it might be broken :/)
-- Bundle install/uninstall/upgrade operation by package manager, allowing for a single invocation of each manager involved. (where supported by each manager)
-  - This is in progress, packages are now bundled by package manager, but the install/uninstall/upgrade operations are not yet bundled
 
 ## Future (After 1.0.0)
 - Offer to install the winget PowerShell module if it is not installed (Only possible once the module is published to the PowerShell Gallery)

@@ -15,25 +15,60 @@
             Where-Object { ($IncludeUnknown -or ($_.Version -ne 'Unknown')) -and $_.IsUpdateAvailable } 
     }
 
-    # Package commands
+    # Package commands - The actions in this script are a bit more complex than the other sources
+    # The Winget Module doesn't have a way to install/uninstall/update packages in bulk, so we have to do it ourselves
+    # We also have to handle the reporting of errors ourselves as the module doesn't do it for us
     InstallPackage       = { 
-        param($Package)
-        Install-WinGetPackage $Package.Id
+        param(
+            [Parameter(ValueFromPipeline)]
+            [FuzzyPackage]$Package
+        )
+        process {
+            $result = Install-WinGetPackage $Package.Id
+            if ($result.status -eq 'Ok') {
+                Write-Host "Successfully Installed $($Package.Name)" -ForegroundColor Green
+            } else {
+                Write-Host "Failed to Install $($Package.Name)" -ForegroundColor Red
+                Write-Host "Status: $($result.status)" -ForegroundColor Red
+            }
+        }
     }
     UninstallPackage     = { 
-        param($Package)
-        Uninstall-WinGetPackage $Package.Id
+        param(
+            [Parameter(ValueFromPipeline)]
+            [FuzzyPackage]$Package
+        )
+        process {
+            $result = Uninstall-WinGetPackage $Package.Id
+            if ($result.status -eq 'Ok') {
+                Write-Host "Successfully Uninstalled $($Package.Name)" -ForegroundColor Green
+            } else {
+                Write-Host "Failed to Uninstall $($Package.Name)" -ForegroundColor Red
+                Write-Host "Status: $($result.status)" -ForegroundColor Red
+            }
+        }
     }
     UpdatePackage        = { 
-        param($Package)
-        Update-WinGetPackage $Package.Id
+        param(
+            [Parameter(ValueFromPipeline)]
+            [FuzzyPackage]$Package
+        )
+        process {
+            $result = Update-WinGetPackage $Package.Id
+            if ($result.status -eq 'Ok') {
+                Write-Host "Successfully Updated $($Package.Name)" -ForegroundColor Green
+            } else {
+                Write-Host "Failed to Update $($Package.Name)" -ForegroundColor Red
+                Write-Host "Status: $($result.status)" -ForegroundColor Red
+            }
+        }
     }
 
     # Source commands
-    UpdateSources       = { winget source update *> $null }
+    UpdateSources        = { winget source update *> $null }
 
     # Package formatters
-    PackageFormatter            = {
+    PackageFormatter     = {
         [OutputType([FuzzyPackage])]
         param(
             [Parameter(ValueFromPipeline)]
@@ -67,11 +102,6 @@
         } else {
             return $false
         }
-    }
-
-    ResultCheck          = {
-        # Check if the winget command was successful
-        $_.status -eq 'Ok'
     }
 }
 

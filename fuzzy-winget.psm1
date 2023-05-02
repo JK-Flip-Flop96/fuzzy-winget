@@ -394,34 +394,27 @@ function Invoke-FuzzyPackager {
         }
     }
 
+    # Take a new line
+    Write-Host ""
+
     # Loop through each package group
     foreach ($PackageGroup in $PackageGroups) {
 
         # Get the source definition using name from the group
         $SourceDefinition = $SourceDefinitions[$PackageGroup.Name]
 
-        # Loop through each package in the group
-        foreach ($Package in $PackageGroup.Group) {
-            # Run the selected action
-            switch ($Action) {
-                'install' { 
-                    Write-Host "[$($SourceDefinition.Color)$($SourceDefinition.DisplayName)$($PSStyle.Reset)] " + 
-                    "Installing $($Package.Title()) Version $($Package.Version)"
-
-                    & $SourceDefinition.InstallPackage -Package $Package
-                }
-                'uninstall' {
-                    Write-Host "[$($SourceDefinition.Color)$($SourceDefinition.DisplayName)$($PSStyle.Reset)] " + 
-                    "Uninstalling $($Package.Title()) Version $($Package.Version)"
-
-                    & $SourceDefinition.UninstallPackage -Package $Package
-                }
-                'update' {
-                    Write-Host "[$($SourceDefinition.Color)$($SourceDefinition.DisplayName)$($PSStyle.Reset)] " + 
-                    "Updating $($Package.Title()) to Version $($Package.AvailableVersion)"
-
-                    & $SourceDefinition.UpdatePackage -Package $Package
-                }
+        switch ($Action) {
+            'install' {
+                Write-Host "[$($SourceDefinition.Color)$($SourceDefinition.DisplayName)$($PSStyle.Reset)] Installing $($PackageGroup.Group.Count) $(if ($PackageGroup.Group.Count -eq 1) { 'package' } else { 'packages' })..."
+                $PackageGroup.Group | & $SourceDefinition.InstallPackage
+            }
+            'uninstall' {
+                Write-Host "[$($SourceDefinition.Color)$($SourceDefinition.DisplayName)$($PSStyle.Reset)] Uninstalling $($PackageGroup.Group.Count) $(if ($PackageGroup.Group.Count -eq 1) { 'package' } else { 'packages' })..."
+                $PackageGroup.Group | & $SourceDefinition.UninstallPackage
+            }
+            'update' {
+                Write-Host "[$($SourceDefinition.Color)$($SourceDefinition.DisplayName)$($PSStyle.Reset)] Updating $($PackageGroup.Group.Count) $(if ($PackageGroup.Group.Count -eq 1) { 'package' } else { 'packages' })..."
+                $PackageGroup.Group | & $SourceDefinition.UpdatePackage
             }
         }
     }
