@@ -2,7 +2,6 @@
 
 ## Soon (Before 1.0.0)
 - Add default keybindings
-- Add default aliases
 - Offer to update fzf where required 
   - Installation is now handled (Think it might be broken :/)
 

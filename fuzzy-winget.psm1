@@ -862,6 +862,15 @@ function Clear-FuzzyPackagesCacheFolder {
     }
 }
 
+###################
+# Aliases         #
+###################
+
+Set-Alias -Name fpi -Value Invoke-FuzzyPackageInstall
+Set-Alias -Name fpr -Value Invoke-FuzzyPackageUninstall # fpr r = remove ~ uninstall
+Set-Alias -Name fpu -Value Invoke-FuzzyPackageUpdate
+Set-Alias -Name cpc -Value Clear-FuzzyPackagesCache
+
 
 
 ###################

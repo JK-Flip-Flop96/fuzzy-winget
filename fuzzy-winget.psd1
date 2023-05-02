@@ -27,7 +27,7 @@ Author = 'Stuart Miller'
 # CompanyName = 'Unknown'
 
 # Copyright statement for this module
-Copyright = '(c) sm185592. All rights reserved.'
+Copyright = '(c) Stuart Miller 2023. All rights reserved.'
 
 # Description of the functionality provided by this module
 # Description = ''
@@ -85,7 +85,12 @@ CmdletsToExport = @()
 VariablesToExport = '*'
 
 # Aliases to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no aliases to export.
-AliasesToExport = @()
+AliasesToExport = @(
+    'fpi',
+    'fpr',
+    'fpu',
+    'cpc'
+)
 
 # DSC resources to export from this module
 # DscResourcesToExport = @()
