@@ -171,7 +171,7 @@ Get-ChildItem -Path "$PSScriptRoot\Sources" -Filter '*.ps1' -Recurse | ForEach-O
 
 # Check the status of each source
 $global:SourceDefinitions.Keys | ForEach-Object {
-    if ($SourceDefinitions[$_].SourceCheck.Invoke()){
+    if ($SourceDefinitions[$_].SourceCheck.Invoke()) {
         Write-Verbose "Source $($_) is installed and working" 
     } else {
         Write-Warning "Source $($_) is not installed or is not working"
@@ -380,8 +380,13 @@ function Invoke-FuzzyPackager {
         Write-Host "[$($SourceDefinition.Color)$($SourceDefinition.DisplayName)$($PSStyle.Reset)]" -NoNewline
         Write-Host " $($PackageGroup.Group.Count) $(if ($PackageGroup.Group.Count -eq 1) { 'package' } else { 'packages' })"
         
-        $PackageGroup.Group | ForEach-Object { 
-            Write-Host "  - $($_.Title()) Version $($_.Version)"
+        # Print each package in the group and its version (and new version if updating)
+        $PackageGroup.Group | ForEach-Object {
+            if ($Action -eq 'update') {
+                Write-Host "  - $($_.Title()) Version $($_.Version) -> $($_.AvailableVersion)"
+            } else {
+                Write-Host "  - $($_.Title()) Version $($_.Version)"
+            }
         }
     }
 
@@ -394,26 +399,30 @@ function Invoke-FuzzyPackager {
         }
     }
 
-    # Take a new line
-    Write-Host ""
-
     # Loop through each package group
     foreach ($PackageGroup in $PackageGroups) {
 
         # Get the source definition using name from the group
         $SourceDefinition = $SourceDefinitions[$PackageGroup.Name]
 
+        # Check if the word package should be plural
+        $PackagesPlural = if ($PackageGroup.Group.Count -eq 1) { 'package' } else { 'packages' }
+
+        # Call the appropriate action on each package in the group
         switch ($Action) {
             'install' {
-                Write-Host "[$($SourceDefinition.Color)$($SourceDefinition.DisplayName)$($PSStyle.Reset)] Installing $($PackageGroup.Group.Count) $(if ($PackageGroup.Group.Count -eq 1) { 'package' } else { 'packages' })..."
+                Write-Host "`n[$($SourceDefinition.Color)$($SourceDefinition.DisplayName)$($PSStyle.Reset)] " + `
+                    "Installing $($PackageGroup.Group.Count) $($PackagesPlural)..."
                 $PackageGroup.Group | & $SourceDefinition.InstallPackage
             }
             'uninstall' {
-                Write-Host "[$($SourceDefinition.Color)$($SourceDefinition.DisplayName)$($PSStyle.Reset)] Uninstalling $($PackageGroup.Group.Count) $(if ($PackageGroup.Group.Count -eq 1) { 'package' } else { 'packages' })..."
+                Write-Host "`n[$($SourceDefinition.Color)$($SourceDefinition.DisplayName)$($PSStyle.Reset)] " + `
+                    "Uninstalling $($PackageGroup.Group.Count) $($PackagesPlural)..."
                 $PackageGroup.Group | & $SourceDefinition.UninstallPackage
             }
             'update' {
-                Write-Host "[$($SourceDefinition.Color)$($SourceDefinition.DisplayName)$($PSStyle.Reset)] Updating $($PackageGroup.Group.Count) $(if ($PackageGroup.Group.Count -eq 1) { 'package' } else { 'packages' })..."
+                Write-Host "`n[$($SourceDefinition.Color)$($SourceDefinition.DisplayName)$($PSStyle.Reset)] " + `
+                    "Updating $($PackageGroup.Group.Count) $($PackagesPlural)..."
                 $PackageGroup.Group | & $SourceDefinition.UpdatePackage
             }
         }
